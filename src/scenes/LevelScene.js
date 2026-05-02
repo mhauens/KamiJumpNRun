@@ -79,7 +79,6 @@ export class LevelScene extends Phaser.Scene {
   }
 
   create() {
-    this.ensureBossAnimations();
     this.createWorld();
     this.createPlatforms();
     this.createPlayer();
@@ -827,10 +826,12 @@ export class LevelScene extends Phaser.Scene {
     this.createArenaWall();
     this.setArenaCamera();
     this.setHealthBarsVisible(false);
+    this.ensureBossAnimations();
     this.showBossCountdown(BOSS_COUNTDOWN_SECONDS);
   }
 
   startBossFight() {
+    this.ensureBossAnimations();
     this.bossCountdownActive = false;
     this.bossIntroActive = false;
     this.bossFightActive = true;
