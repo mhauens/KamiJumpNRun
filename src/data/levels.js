@@ -1,3 +1,71 @@
+const BOSS_DEFAULTS = {
+  playerHp: 3,
+  hp: 3,
+  speed: 110,
+  attackCooldown: 1600,
+  projectileRange: 360,
+  projectileSpeed: 280,
+  shotOffsetX: 58,
+  shotOffsetY: -104,
+  shotScale: 0.18,
+  damage: 1,
+};
+const BOSS_ARENA_AFTER_PICKUP_PADDING = 180;
+const BOSS_ARENA_WIDTH = 1280;
+const BOSS_ARENA_EXIT_PADDING = 140;
+const BOSS_ARENA_GROUND_HEIGHT = 260;
+
+function withBossDefaults(level) {
+  const lastPickupX = Math.max(
+    ...level.coins.map((entry) => entry.x),
+    ...level.balls.map((entry) => entry.x),
+  );
+  const originalGoalBottom = level.goal.y + level.goal.height;
+  const arenaLeft = lastPickupX + BOSS_ARENA_AFTER_PICKUP_PADDING;
+  const arenaRight = arenaLeft + BOSS_ARENA_WIDTH;
+  const goal = {
+    ...level.goal,
+    x: arenaRight + BOSS_ARENA_EXIT_PADDING,
+    y: originalGoalBottom - level.goal.height,
+  };
+  const worldWidth = Math.max(level.worldWidth, goal.x + BOSS_ARENA_EXIT_PADDING);
+  const arenaFloor = {
+    x: arenaLeft,
+    y: originalGoalBottom,
+    width: goal.x + 80 - arenaLeft,
+    height: Math.max(level.worldHeight - originalGoalBottom, BOSS_ARENA_GROUND_HEIGHT),
+  };
+  const platforms = level.platforms.filter((platform) => {
+    const platformRight = platform.x + platform.width;
+    const overlapsArena = platform.x < goal.x + 80 && platformRight > arenaLeft;
+
+    return !overlapsArena;
+  });
+  const boss = {
+    ...BOSS_DEFAULTS,
+    triggerX: arenaLeft - 40,
+    arenaLeft,
+    arenaRight,
+    floorY: originalGoalBottom,
+    respawnX: arenaRight - 90,
+    playerStart: { x: arenaLeft + 120, y: originalGoalBottom },
+    spawn: { x: arenaRight - 180, y: originalGoalBottom - level.goal.height },
+    checkpoint: {
+      x: arenaLeft - 140,
+      y: originalGoalBottom - level.goal.height,
+      label: 'Boss Checkpoint',
+    },
+  };
+
+  return {
+    ...level,
+    worldWidth,
+    platforms: [...platforms, arenaFloor],
+    goal,
+    boss,
+  };
+}
+
 export const LEVELS = [
   {
     id: 1,
@@ -375,4 +443,4 @@ export const LEVELS = [
     ],
     goal: { x: 5080, y: 530, width: 56, height: 90 },
   },
-];
+].map(withBossDefaults);

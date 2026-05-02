@@ -7,7 +7,7 @@ const PLAYER_SCALE = 0.11;
 const PLAYER_SPEED = 320;
 const JUMP_VELOCITY = -660;
 const FALL_LIMIT_PADDING = 220;
-const FALL_PENALTY = 10;
+const FALL_PENALTY = 3;
 const GROUNDED_GRACE_MS = 120;
 const JUMP_VISUAL_MIN_SPEED = 40;
 const RESPAWN_PLATFORM_MARGIN = 20;
@@ -20,6 +20,29 @@ const HUD_PANEL_WIDTH = 370;
 const HUD_PANEL_HEIGHT = 146;
 const HUD_TEXT_X = 34;
 const HUD_HELP_WRAP_WIDTH = HUD_PANEL_WIDTH - 32;
+const BOSS_FOOT_SINK = 4;
+const BOSS_SCALE_MULTIPLIER = 1.22;
+const BOSS_DEFEATED_SCALE_MULTIPLIER = 2.75;
+const BOSS_DEFEATED_FOOT_SINK = 108;
+const BOSS_BODY_WIDTH_RATIO = 0.62;
+const BOSS_BODY_HEIGHT_RATIO = 0.24;
+const BOSS_BODY_VERTICAL_SHIFT_RATIO = 0;
+const BOSS_INTRO_MS = 6000;
+const BOSS_HIT_BOUNCE = -520;
+const BOSS_STOMP_MIN_HEIGHT = 20;
+const BOSS_STOMP_MAX_HEIGHT = 112;
+const BOSS_STOMP_EXTRA_WIDTH = 24;
+const BOSS_CONTACT_DAMAGE_HEIGHT = 46;
+const PLAYER_HIT_LOCK_MS = 1000;
+const BOSS_HIT_LOCK_MS = 1000;
+const PROJECTILE_WIDTH = 34;
+const PROJECTILE_HEIGHT = 18;
+const HEALTH_BAR_WIDTH = 220;
+const HEALTH_BAR_HEIGHT = 18;
+const PLAYER_ARENA_FOOT_SINK = 30;
+const BOSS_COUNTDOWN_SECONDS = 3;
+const CAMERA_EXIT_PAN_MS = 700;
+const BOSS_BASE_HP = 5;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -29,12 +52,34 @@ export class LevelScene extends Phaser.Scene {
   init(data) {
     this.levelIndex = data.levelIndex ?? 0;
     this.score = data.score ?? 0;
+    this.levelStartScore = data.levelStartScore ?? this.score;
     this.highScore = data.highScore ?? loadHighScore();
     this.level = LEVELS[this.levelIndex];
     this.respawnPoint = this.resolveRespawnPoint(this.level.spawn);
     this.levelComplete = false;
     this.isRespawning = false;
     this.lastGroundedAt = 0;
+    this.bossState = 'stand';
+    this.bossIntroActive = false;
+    this.bossCountdownActive = false;
+    this.bossFightActive = false;
+    this.bossIntroShown = false;
+    this.bossDefeated = false;
+    this.bossExitUnlocked = false;
+    this.awaitingBossRetry = false;
+    this.playerIsHit = false;
+    this.playerBossContactDamageArmed = true;
+    this.bossIsHit = false;
+    this.levelCoinHpBonus = 0;
+    this.playerMaxHp = BOSS_BASE_HP;
+    this.bossMaxHp = BOSS_BASE_HP + this.level.coins.length;
+    this.playerHp = this.playerMaxHp;
+    this.bossHp = this.bossMaxHp;
+    this.nextBossAttackAt = 0;
+    this.bossDirection = -1;
+    this.bossScale = 1;
+    this.bossBottomPaddingByTexture = new Map();
+    this.bossBodyBounds = null;
   }
 
   create() {
@@ -44,7 +89,9 @@ export class LevelScene extends Phaser.Scene {
     this.createCollectibles();
     this.createCheckpoints();
     this.createGoal();
+    this.createBoss();
     this.createHud();
+    this.createBossRetryUi();
     this.configureCollisions();
     this.configureCamera();
     this.showToast(`Level ${this.level.id}: ${this.level.name}`);
@@ -64,7 +111,6 @@ export class LevelScene extends Phaser.Scene {
       .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
       .setScrollFactor(0)
       .setDepth(-30);
-
   }
 
   createPlatforms() {
@@ -146,12 +192,15 @@ export class LevelScene extends Phaser.Scene {
 
   configurePlayerBody() {
     const frame = this.player.frame;
-    const bodyOffsetX = (frame.width - PLAYER_BODY_WIDTH) / 2;
+    const bodyOffsetX = Math.max((frame.width - PLAYER_BODY_WIDTH) / 2, 0);
     const bodyOffsetY =
       frame.height - PLAYER_BODY_HEIGHT - PLAYER_FOOT_VISUAL_SINK / PLAYER_SCALE;
 
-    this.player.body.setSize(PLAYER_BODY_WIDTH, PLAYER_BODY_HEIGHT);
-    this.player.body.setOffset(bodyOffsetX, bodyOffsetY);
+    this.player.body.setSize(
+      Math.min(PLAYER_BODY_WIDTH, frame.width),
+      Math.min(PLAYER_BODY_HEIGHT, frame.height),
+    );
+    this.player.body.setOffset(bodyOffsetX, Math.max(bodyOffsetY, 0));
   }
 
   createPlayerAnimations() {
@@ -182,11 +231,11 @@ export class LevelScene extends Phaser.Scene {
       immovable: true,
     });
 
-    this.createPickupSet(this.level.coins, 'coin', 1, 1);
-    this.createPickupSet(this.level.balls, 'ball', 10, 1.08);
+    this.createPickupSet(this.level.coins, 'coin', 1, 1, 1);
+    this.createPickupSet(this.level.balls, 'ball', 10, 1.08, 0);
   }
 
-  createPickupSet(entries, texture, value, scale) {
+  createPickupSet(entries, texture, value, scale, bossHpBonus) {
     entries.forEach((entry) => {
       const pickup = this.collectibles
         .create(entry.x, entry.y, texture)
@@ -196,6 +245,7 @@ export class LevelScene extends Phaser.Scene {
       pickup.body.setAllowGravity(false);
       pickup.body.setImmovable(true);
       pickup.setData('value', value);
+      pickup.setData('bossHpBonus', bossHpBonus);
       pickup.setData('baseY', entry.y);
 
       this.tweens.add({
@@ -242,6 +292,30 @@ export class LevelScene extends Phaser.Scene {
       .setDisplaySize(this.level.goal.width, this.level.goal.height)
       .setDepth(7)
       .refreshBody();
+
+    this.goal.disableBody(true, true);
+  }
+
+  createBoss() {
+    const bossConfig = this.level.boss;
+    const standKey = `boss-${this.level.id}-stand`;
+    this.bossScale = this.resolveBossScale(standKey);
+
+    this.boss = this.physics.add
+      .sprite(bossConfig.spawn.x, this.getBossVisualY(standKey), standKey)
+      .setOrigin(0.5, 1)
+      .setScale(this.bossScale)
+      .setCollideWorldBounds(false)
+      .setDepth(9);
+
+    this.boss.body.setAllowGravity(false);
+    this.boss.body.setImmovable(true);
+    this.configureBossBody();
+
+    this.projectiles = this.physics.add.group({
+      allowGravity: false,
+      immovable: true,
+    });
   }
 
   createHud() {
@@ -290,6 +364,8 @@ export class LevelScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(101);
 
+    this.createHealthBars();
+
     this.toastText = this.add
       .text(GAME_WIDTH / 2, 110, '', {
         fontFamily: 'Verdana, sans-serif',
@@ -306,8 +382,227 @@ export class LevelScene extends Phaser.Scene {
     this.refreshHud();
   }
 
+  createHealthBars() {
+    this.playerHealthLabel = this.add
+      .text(GAME_WIDTH / 2 - HEALTH_BAR_WIDTH - 28, 26, 'Kami', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '16px',
+        color: '#ffffff',
+      })
+      .setScrollFactor(0)
+      .setDepth(111)
+      .setVisible(false);
+
+    this.playerHealthBack = this.add
+      .rectangle(GAME_WIDTH / 2 - 28, 58, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, 0x3d1820, 0.88)
+      .setOrigin(1, 0.5)
+      .setScrollFactor(0)
+      .setDepth(110)
+      .setVisible(false);
+
+    this.playerHealthFill = this.add
+      .rectangle(
+        GAME_WIDTH / 2 - 28 - HEALTH_BAR_WIDTH,
+        58,
+        HEALTH_BAR_WIDTH,
+        HEALTH_BAR_HEIGHT,
+        0xff5f6d,
+        1,
+      )
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(111)
+      .setVisible(false);
+
+    this.playerHealthValue = this.add
+      .text(GAME_WIDTH / 2 - 28 - HEALTH_BAR_WIDTH / 2, 58, '', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '13px',
+        color: '#ffffff',
+        stroke: '#41111a',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(112)
+      .setVisible(false);
+
+    this.bossHealthLabel = this.add
+      .text(GAME_WIDTH / 2 + 28, 26, `Boss ${this.level.id}`, {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '16px',
+        color: '#ffffff',
+      })
+      .setScrollFactor(0)
+      .setDepth(111)
+      .setVisible(false);
+
+    this.bossHealthBack = this.add
+      .rectangle(GAME_WIDTH / 2 + 28, 58, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, 0x1f2f40, 0.88)
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(110)
+      .setVisible(false);
+
+    this.bossHealthFill = this.add
+      .rectangle(GAME_WIDTH / 2 + 28, 58, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, 0x6be27b, 1)
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0)
+      .setDepth(111)
+      .setVisible(false);
+
+    this.bossHealthValue = this.add
+      .text(GAME_WIDTH / 2 + 28 + HEALTH_BAR_WIDTH / 2, 58, '', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '13px',
+        color: '#ffffff',
+        stroke: '#10243a',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(112)
+      .setVisible(false);
+  }
+
+  createBossRetryUi() {
+    this.retrySplash = this.add
+      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, `boss-${this.level.id}-retry-splashscreen`)
+      .setScrollFactor(0)
+      .setDepth(150)
+      .setVisible(false);
+    this.fitImageToScreen(this.retrySplash);
+
+    this.restartLevelButton = this.createRetryActionButton({
+      x: GAME_WIDTH / 2,
+      y: GAME_HEIGHT - 178,
+      width: 392,
+      height: 86,
+      icon: '↺',
+      label: 'Restart Level',
+      labelFontSize: '34px',
+    });
+    this.retryButton = this.createRetryActionButton({
+      x: GAME_WIDTH / 2,
+      y: GAME_HEIGHT - 74,
+      width: 300,
+      height: 92,
+      icon: '↻',
+      label: 'Retry',
+      labelFontSize: '43px',
+    });
+
+    this.restartLevelButton.on('pointerdown', () => {
+      if (!this.awaitingBossRetry) {
+        return;
+      }
+
+      this.scene.start('LevelScene', {
+        levelIndex: this.levelIndex,
+        score: this.levelStartScore,
+        levelStartScore: this.levelStartScore,
+        highScore: this.highScore,
+      });
+    });
+
+    this.retryButton.on('pointerdown', () => {
+      if (!this.awaitingBossRetry) {
+        return;
+      }
+
+      this.startBossCountdown();
+    });
+  }
+
+  createRetryActionButton({
+    x,
+    y,
+    width,
+    height,
+    icon: iconText,
+    label: labelText,
+    labelFontSize,
+  }) {
+    const button = this.add
+      .container(x, y)
+      .setScrollFactor(0)
+      .setDepth(152)
+      .setVisible(false)
+      .setSize(width, height)
+      .setInteractive(
+        new Phaser.Geom.Rectangle(0, 0, width, height),
+        Phaser.Geom.Rectangle.Contains,
+      );
+    button.input.cursor = 'pointer';
+
+    const shadow = this.add.graphics();
+    shadow.fillStyle(0x7b3f05, 0.92);
+    shadow.fillRoundedRect(-width / 2, -height / 2 + 9, width, height, 30);
+
+    const frame = this.add.graphics();
+    frame.fillStyle(0x9a580d, 1);
+    frame.fillRoundedRect(-width / 2, -height / 2, width, height, 30);
+    frame.lineStyle(4, 0x6f3d07, 1);
+    frame.strokeRoundedRect(-width / 2 + 2, -height / 2 + 2, width - 4, height - 4, 28);
+
+    const face = this.add.graphics();
+    face.fillStyle(0xffa91f, 1);
+    face.fillRoundedRect(-width / 2 + 10, -height / 2 + 8, width - 20, height - 22, 24);
+    face.fillStyle(0xffd34f, 1);
+    face.fillRoundedRect(-width / 2 + 18, -height / 2 + 13, width - 36, 33, 18);
+    face.lineStyle(3, 0xfff2a8, 0.85);
+    face.strokeRoundedRect(-width / 2 + 16, -height / 2 + 13, width - 32, height - 32, 22);
+
+    const icon = this.add
+      .text(labelText === 'Retry' ? -88 : -116, -1, iconText, {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '46px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        stroke: '#8a4a08',
+        strokeThickness: 7,
+      })
+      .setOrigin(0.5);
+
+    const label = this.add
+      .text(labelText === 'Retry' ? 36 : 38, -1, labelText, {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: labelFontSize,
+        fontStyle: 'bold',
+        color: '#ffffff',
+        stroke: '#8a4a08',
+        strokeThickness: 7,
+      })
+      .setOrigin(0.5);
+
+    button.add([shadow, frame, face, icon, label]);
+    button.on('pointerover', () => button.setScale(1.04));
+    button.on('pointerout', () => button.setScale(1));
+    button.on('pointerdown', () => button.setScale(0.98));
+    button.on('pointerup', () => button.setScale(1.04));
+
+    return button;
+  }
+
+  showBossRetryUi() {
+    this.fitImageToScreen(this.retrySplash);
+    this.retrySplash.setVisible(true);
+    this.restartLevelButton.setVisible(true);
+    this.retryButton.setVisible(true);
+  }
+
+  hideBossRetryUi() {
+    this.retrySplash?.setVisible(false);
+    this.restartLevelButton?.setVisible(false);
+    this.restartLevelButton?.setScale(1);
+    this.retryButton?.setVisible(false);
+    this.retryButton?.setScale(1);
+  }
+
   configureCollisions() {
     this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.boss, this.platforms);
+    this.physics.add.collider(this.projectiles, this.platforms, this.destroyProjectile, null, this);
     this.physics.add.overlap(
       this.player,
       this.collectibles,
@@ -326,6 +621,20 @@ export class LevelScene extends Phaser.Scene {
       this.player,
       this.goal,
       this.completeLevel,
+      null,
+      this,
+    );
+    this.physics.add.overlap(
+      this.player,
+      this.boss,
+      this.handlePlayerBossOverlap,
+      null,
+      this,
+    );
+    this.physics.add.overlap(
+      this.player,
+      this.projectiles,
+      this.handleProjectileHit,
       null,
       this,
     );
@@ -353,17 +662,73 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    this.updateBossTrigger();
+    this.updateBossExit();
     this.handleMovement();
+    this.checkBossStomp();
+    this.updateBoss();
+    this.updateProjectiles();
+    this.rearmBossContactDamage();
 
     if (this.player.y > this.level.worldHeight + FALL_LIMIT_PADDING) {
       this.respawnPlayer(false);
     }
   }
 
+  updateBossTrigger() {
+    if (
+      this.bossFightActive ||
+      this.bossIntroActive ||
+      this.bossCountdownActive ||
+      this.awaitingBossRetry ||
+      this.bossDefeated ||
+      this.player.x < this.level.boss.triggerX
+    ) {
+      return;
+    }
+
+    if (this.bossIntroShown) {
+      this.startBossCountdown();
+      return;
+    }
+
+    this.startBossIntro();
+  }
+
+  updateBossExit() {
+    if (!this.bossDefeated || this.bossExitUnlocked || this.player.x < this.level.boss.arenaRight - 90) {
+      return;
+    }
+
+    this.bossExitUnlocked = true;
+    this.cameras.main.stopFollow();
+    this.cameras.main.pan(
+      Phaser.Math.Clamp(
+        this.player.x + 140,
+        GAME_WIDTH / 2,
+        this.level.worldWidth - GAME_WIDTH / 2,
+      ),
+      GAME_HEIGHT / 2,
+      CAMERA_EXIT_PAN_MS,
+      'Sine.easeInOut',
+    );
+
+    this.time.delayedCall(CAMERA_EXIT_PAN_MS, () => {
+      if (!this.levelComplete) {
+        this.cameras.main.startFollow(this.player, true, 0.05, 0.08, -140, 40);
+      }
+    });
+  }
+
   handleMovement() {
     const body = this.player.body;
 
     if (!body) {
+      return;
+    }
+
+    if (this.bossIntroActive || this.bossCountdownActive || this.awaitingBossRetry || this.playerIsHit) {
+      this.player.setVelocityX(0);
       return;
     }
 
@@ -408,7 +773,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   setPlayerVisualState(nextState) {
-    if (this.playerState === nextState) {
+    if (this.playerState === nextState || this.playerIsHit) {
       return;
     }
 
@@ -424,17 +789,728 @@ export class LevelScene extends Phaser.Scene {
     this.configurePlayerBody();
   }
 
+  startBossIntro() {
+    this.bossIntroActive = true;
+    this.bossIntroShown = true;
+    this.bossState = 'intro';
+    this.placePlayerAtBossStart();
+    this.placeBossAtStart();
+    this.activateBossCheckpoint();
+    this.createArenaWall();
+    this.panCameraToBossArena();
+    this.showBossSplash();
+
+    this.time.delayedCall(BOSS_INTRO_MS, () => {
+      if (!this.bossIntroActive || this.bossDefeated) {
+        return;
+      }
+
+      this.hideBossSplash();
+      this.startBossCountdown();
+    });
+  }
+
+  startBossCountdown() {
+    if (this.bossCountdownActive || this.bossFightActive || this.bossDefeated) {
+      return;
+    }
+
+    this.bossIntroActive = false;
+    this.bossCountdownActive = true;
+    this.awaitingBossRetry = false;
+    this.hideBossRetryUi();
+    this.placePlayerAtBossStart();
+    this.placeBossAtStart();
+    this.activateBossCheckpoint();
+    this.createArenaWall();
+    this.setArenaCamera();
+    this.setHealthBarsVisible(false);
+    this.showBossCountdown(BOSS_COUNTDOWN_SECONDS);
+  }
+
+  startBossFight() {
+    this.bossCountdownActive = false;
+    this.bossIntroActive = false;
+    this.bossFightActive = true;
+    this.awaitingBossRetry = false;
+    this.bossState = 'patrol';
+    this.playerBossContactDamageArmed = true;
+    this.playerMaxHp = this.getPlayerBossMaxHp();
+    this.playerHp = this.playerMaxHp;
+    this.bossHp = this.bossMaxHp;
+    this.placePlayerAtBossStart();
+    this.placeBossAtStart();
+    this.activateBossCheckpoint();
+    this.createArenaWall();
+    this.nextBossAttackAt = this.time.now + 700;
+    this.setHealthBarsVisible(true);
+    this.refreshHealthBars();
+    this.setArenaCamera();
+    this.boss.play(`boss-${this.level.id}-move`, true);
+  }
+
+  placePlayerAtBossStart() {
+    this.player.setPosition(
+      this.level.boss.playerStart.x,
+      this.level.boss.playerStart.y + PLAYER_ARENA_FOOT_SINK,
+    );
+    this.player.body.reset(this.player.x, this.player.y);
+    this.player.setVelocity(0, 0);
+    this.player.setFlipX(false);
+    this.player.stop();
+    this.player.setTexture('char-stand');
+    this.playerState = 'stand';
+    this.configurePlayerBody();
+  }
+
+  placeBossAtStart() {
+    const standKey = `boss-${this.level.id}-stand`;
+    this.boss.body.enable = true;
+    this.boss.body.setAllowGravity(false);
+    this.boss.body.setImmovable(true);
+    this.boss.setVelocity(0, 0);
+    this.boss.setTexture(standKey);
+    this.boss.setScale(this.bossScale);
+    this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
+    this.boss.setFlipX(true);
+    this.bossDirection = -1;
+    this.configureBossBody();
+  }
+
+  getBossVisualY(textureKey = this.boss.texture.key) {
+    return this.level.boss.floorY +
+      this.getTextureBottomPadding(textureKey) * this.bossScale +
+      BOSS_FOOT_SINK;
+  }
+
+  getBossDefeatedScale(defeatedKey) {
+    const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
+    const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
+
+    return (playerVisibleHeight / defeatedVisibleHeight) * BOSS_DEFEATED_SCALE_MULTIPLIER;
+  }
+
+  getBossDefeatedY(defeatedKey, defeatedScale) {
+    return this.level.boss.floorY +
+      this.getTextureBottomPadding(defeatedKey) * defeatedScale +
+      BOSS_DEFEATED_FOOT_SINK;
+  }
+
+  resolveBossScale(standKey) {
+    const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
+    const bossVisibleHeight = this.getTextureContentBounds(standKey).height;
+
+    return (playerVisibleHeight / bossVisibleHeight) * BOSS_SCALE_MULTIPLIER;
+  }
+
+  getTextureBottomPadding(textureKey) {
+    if (!this.bossBottomPaddingByTexture.has(textureKey)) {
+      const bounds = this.getTextureContentBounds(textureKey);
+      this.bossBottomPaddingByTexture.set(textureKey, bounds.bottomPadding);
+    }
+
+    return this.bossBottomPaddingByTexture.get(textureKey);
+  }
+
+  getTextureContentBounds(textureKey) {
+    const sourceImage = this.textures.get(textureKey).getSourceImage();
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceImage.width;
+    canvas.height = sourceImage.height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(sourceImage, 0, 0);
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let minX = canvas.width;
+    let minY = canvas.height;
+    let maxX = 0;
+    let maxY = 0;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const red = pixels[index];
+      const green = pixels[index + 1];
+      const blue = pixels[index + 2];
+      const alpha = pixels[index + 3];
+      const isWhiteBackground = red > 245 && green > 245 && blue > 245;
+
+      if (alpha <= 0 || isWhiteBackground) {
+        continue;
+      }
+
+      const pixelIndex = index / 4;
+      const x = pixelIndex % canvas.width;
+      const y = Math.floor(pixelIndex / canvas.width);
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+
+    if (minX > maxX || minY > maxY) {
+      return {
+        x: 0,
+        y: 0,
+        width: canvas.width,
+        height: canvas.height,
+        bottomPadding: 0,
+      };
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+      bottomPadding: canvas.height - maxY - 1,
+    };
+  }
+
+  activateBossCheckpoint() {
+    this.respawnPoint = {
+      x: this.level.boss.playerStart.x,
+      y: this.level.boss.playerStart.y + PLAYER_ARENA_FOOT_SINK,
+    };
+    this.showToast(this.level.boss.checkpoint.label);
+  }
+
+  createArenaWall() {
+    if (this.arenaWall) {
+      return;
+    }
+
+    this.arenaWall = this.physics.add.staticImage(
+      this.level.boss.arenaLeft,
+      GAME_HEIGHT / 2,
+      'platform-hitbox',
+    );
+
+    this.arenaWall
+      .setDisplaySize(24, GAME_HEIGHT)
+      .setVisible(false)
+      .refreshBody();
+
+    this.arenaWallCollider = this.physics.add.collider(this.player, this.arenaWall);
+  }
+
+  removeArenaWall() {
+    if (this.arenaWallCollider) {
+      this.arenaWallCollider.destroy();
+      this.arenaWallCollider = null;
+    }
+
+    if (this.arenaWall) {
+      this.arenaWall.destroy();
+      this.arenaWall = null;
+    }
+  }
+
+  fitImageToScreen(image) {
+    const scale = Math.max(
+      GAME_WIDTH / image.width,
+      GAME_HEIGHT / image.height,
+    );
+
+    image.setScale(scale);
+  }
+
+  showBossSplash() {
+    this.hideBossSplash();
+    this.bossSplash = this.add
+      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, `boss-${this.level.id}-splashscreen`)
+      .setScrollFactor(0)
+      .setDepth(140);
+
+    this.fitImageToScreen(this.bossSplash);
+  }
+
+  panCameraToBossArena() {
+    const cameraTargetX = Phaser.Math.Clamp(
+      this.level.boss.arenaLeft + GAME_WIDTH / 2,
+      GAME_WIDTH / 2,
+      this.level.worldWidth - GAME_WIDTH / 2,
+    );
+
+    this.cameras.main.stopFollow();
+    this.cameras.main.pan(cameraTargetX, GAME_HEIGHT / 2, 1800, 'Sine.easeInOut');
+  }
+
+  setArenaCamera() {
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(
+      this.level.boss.arenaLeft + GAME_WIDTH / 2,
+      GAME_HEIGHT / 2,
+    );
+  }
+
+  showBossCountdown(secondsLeft) {
+    if (this.countdownText) {
+      this.tweens.killTweensOf(this.countdownText);
+      this.countdownText.destroy();
+    }
+
+    this.countdownText = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, secondsLeft > 0 ? String(secondsLeft) : 'Los!', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '96px',
+        color: '#ffffff',
+        stroke: '#17324d',
+        strokeThickness: 10,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(145)
+      .setScale(0.8);
+
+    this.tweens.add({
+      targets: this.countdownText,
+      scale: 1,
+      duration: 260,
+      ease: 'Back.out',
+    });
+
+    this.time.delayedCall(1000, () => {
+      if (!this.bossCountdownActive) {
+        return;
+      }
+
+      if (secondsLeft <= 1) {
+        this.countdownText.destroy();
+        this.countdownText = null;
+        this.startBossFight();
+        return;
+      }
+
+      this.showBossCountdown(secondsLeft - 1);
+    });
+  }
+
+  hideBossSplash() {
+    if (!this.bossSplash) {
+      return;
+    }
+
+    this.bossSplash.destroy();
+    this.bossSplash = null;
+  }
+
+  updateBoss() {
+    this.recoverBossIfFallen();
+
+    if (!this.bossFightActive || this.bossIsHit || this.bossDefeated) {
+      return;
+    }
+
+    if (this.bossState === 'attack') {
+      this.boss.setVelocityX(0);
+      return;
+    }
+
+    const bossConfig = this.level.boss;
+    const distanceToPlayer = Math.abs(this.player.x - this.boss.x);
+
+    if (distanceToPlayer <= bossConfig.projectileRange && this.time.now >= this.nextBossAttackAt) {
+      this.startBossAttack();
+      return;
+    }
+
+    this.bossState = 'patrol';
+    this.boss.setVelocityX(this.bossDirection * bossConfig.speed);
+
+    if (this.boss.x <= bossConfig.arenaLeft + 80) {
+      this.bossDirection = 1;
+      this.boss.setX(bossConfig.arenaLeft + 80);
+    } else if (this.boss.x >= bossConfig.arenaRight - 80) {
+      this.bossDirection = -1;
+      this.boss.setX(bossConfig.arenaRight - 80);
+    }
+
+    this.boss.setFlipX(this.player.x < this.boss.x);
+    this.boss.play(`boss-${this.level.id}-move`, true);
+  }
+
+  recoverBossIfFallen() {
+    if (!this.boss?.body?.enable || this.bossDefeated) {
+      return;
+    }
+
+    this.boss.setY(this.getBossVisualY());
+  }
+
+  respawnBossOnRight() {
+    this.boss.setVelocity(0, 0);
+    this.boss.body.setAllowGravity(false);
+    this.boss.setPosition(this.level.boss.respawnX, this.getBossVisualY());
+    this.bossDirection = -1;
+    this.configureBossBody();
+  }
+
+  checkBossStomp() {
+    if (!this.bossFightActive || this.bossDefeated || this.bossIntroActive || this.bossIsHit) {
+      return;
+    }
+
+    if (this.isPlayerInBossStompZone()) {
+      this.damageBoss();
+    }
+  }
+
+  isPlayerInBossStompZone() {
+    const playerIsFalling = this.player.body.velocity.y > 80;
+    const stompHalfWidth = this.getBossBodyWorldWidth() / 2 + BOSS_STOMP_EXTRA_WIDTH;
+    const horizontallyAligned =
+      Math.abs(this.player.x - this.boss.x) <= stompHalfWidth;
+    const heightAboveBoss = this.boss.y - this.player.y;
+    const aboveBoss =
+      heightAboveBoss >= BOSS_STOMP_MIN_HEIGHT &&
+      heightAboveBoss <= BOSS_STOMP_MAX_HEIGHT;
+
+    return playerIsFalling && horizontallyAligned && aboveBoss;
+  }
+
+  startBossAttack() {
+    if (this.bossState === 'attack') {
+      return;
+    }
+
+    this.bossState = 'attack';
+    this.boss.setVelocityX(0);
+    this.boss.setFlipX(this.player.x < this.boss.x);
+    this.boss.play(`boss-${this.level.id}-attack`, true);
+    this.nextBossAttackAt = this.time.now + this.level.boss.attackCooldown;
+
+    this.time.delayedCall(320, () => {
+      if (this.bossFightActive && !this.bossDefeated && this.bossState === 'attack') {
+        this.fireBossProjectile();
+      }
+    });
+
+    this.boss.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!this.bossDefeated && this.bossFightActive) {
+        this.bossState = 'patrol';
+      }
+    });
+  }
+
+  fireBossProjectile() {
+    const direction = this.player.x < this.boss.x ? -1 : 1;
+    const bossConfig = this.level.boss;
+    const projectile = this.projectiles
+      .create(
+        this.boss.x + direction * bossConfig.shotOffsetX,
+        this.boss.y + bossConfig.shotOffsetY,
+        `boss-${this.level.id}-shot`,
+      )
+      .setOrigin(0.5)
+      .setScale(bossConfig.shotScale)
+      .setFlipX(direction < 0)
+      .setDepth(8);
+
+    projectile.body.setAllowGravity(false);
+    projectile.body.setSize(
+      PROJECTILE_WIDTH / projectile.scaleX,
+      PROJECTILE_HEIGHT / projectile.scaleY,
+    );
+    projectile.setVelocityX(direction * bossConfig.projectileSpeed);
+    projectile.setData('spawnX', projectile.x);
+    projectile.setData('range', bossConfig.projectileRange);
+    projectile.setData('damage', bossConfig.damage);
+  }
+
+  updateProjectiles() {
+    if (!this.projectiles) {
+      return;
+    }
+
+    this.projectiles.children.each((projectile) => {
+      if (!projectile.active) {
+        return;
+      }
+
+      const spawnX = projectile.getData('spawnX');
+      const range = projectile.getData('range');
+
+      if (Math.abs(projectile.x - spawnX) >= range) {
+        projectile.destroy();
+      }
+    });
+  }
+
+  rearmBossContactDamage() {
+    if (this.playerBossContactDamageArmed || this.arePlayerAndBossBodiesOverlapping()) {
+      return;
+    }
+
+    this.playerBossContactDamageArmed = true;
+  }
+
+  arePlayerAndBossBodiesOverlapping() {
+    if (!this.player?.body || !this.boss?.body || !this.boss.body.enable) {
+      return false;
+    }
+
+    return Phaser.Geom.Intersects.RectangleToRectangle(
+      new Phaser.Geom.Rectangle(
+        this.player.body.x,
+        this.player.body.y,
+        this.player.body.width,
+        this.player.body.height,
+      ),
+      new Phaser.Geom.Rectangle(
+        this.boss.body.x,
+        this.boss.body.y,
+        this.boss.body.width,
+        this.boss.body.height,
+      ),
+    );
+  }
+
+  handlePlayerBossOverlap(player, boss) {
+    if (!this.bossFightActive || this.bossDefeated || this.bossIntroActive) {
+      return;
+    }
+
+    const playerCanHit =
+      !this.bossIsHit &&
+      player.body.velocity.y > 80 &&
+      this.isPlayerInBossStompZone();
+
+    if (playerCanHit) {
+      this.damageBoss();
+      return;
+    }
+
+    if (player.y < boss.y - BOSS_CONTACT_DAMAGE_HEIGHT) {
+      return;
+    }
+
+    if (!this.playerBossContactDamageArmed) {
+      return;
+    }
+
+    this.playerBossContactDamageArmed = false;
+    this.damagePlayer(this.level.boss.damage);
+  }
+
+  handleProjectileHit(player, projectile) {
+    if (!this.bossFightActive || this.bossIntroActive || this.bossDefeated) {
+      return;
+    }
+
+    const damage = projectile.getData('damage') ?? this.level.boss.damage;
+    projectile.destroy();
+    this.damagePlayer(damage);
+  }
+
+  damageBoss() {
+    if (this.bossIsHit || this.bossDefeated) {
+      return;
+    }
+
+    this.bossHp = Math.max(0, this.bossHp - 1);
+    this.bossIsHit = true;
+    this.bossState = 'hit';
+    this.boss.setVelocityX(0);
+    this.player.setVelocityY(BOSS_HIT_BOUNCE);
+    this.boss.play(`boss-${this.level.id}-hit`, true);
+    this.refreshHealthBars();
+
+    if (this.bossHp <= 0) {
+      this.time.delayedCall(260, () => this.defeatBoss());
+      return;
+    }
+
+    this.time.delayedCall(BOSS_HIT_LOCK_MS, () => {
+      this.bossIsHit = false;
+      if (this.bossFightActive && !this.bossDefeated) {
+        this.bossState = 'patrol';
+      }
+    });
+  }
+
+  damagePlayer(damage) {
+    if (this.playerIsHit || this.isRespawning || this.bossDefeated || !this.bossFightActive) {
+      return;
+    }
+
+    this.playerHp = Math.max(0, this.playerHp - damage);
+    this.playerIsHit = true;
+    this.player.setVelocityX(0);
+    this.player.stop();
+    this.player.play(`player-hit-boss-${this.level.id}`, true);
+    this.refreshHealthBars();
+    this.cameras.main.shake(130, 0.003);
+
+    if (this.playerHp <= 0) {
+      this.time.delayedCall(PLAYER_HIT_LOCK_MS, () => this.loseBossFight());
+      return;
+    }
+
+    this.time.delayedCall(PLAYER_HIT_LOCK_MS, () => {
+      this.playerIsHit = false;
+      this.playerState = '';
+      this.configurePlayerBody();
+    });
+  }
+
+  defeatBoss() {
+    if (this.bossDefeated) {
+      return;
+    }
+
+    this.bossDefeated = true;
+    this.bossFightActive = false;
+    this.bossIntroActive = false;
+    this.bossCountdownActive = false;
+    this.bossIsHit = false;
+    this.bossState = 'defeated';
+    this.boss.setVelocity(0, 0);
+    this.boss.body.enable = false;
+    this.boss.stop();
+    const defeatedKey = `boss-${this.level.id}-defeated`;
+    const defeatedScale = this.getBossDefeatedScale(defeatedKey);
+    this.boss.setTexture(defeatedKey);
+    this.boss.setScale(defeatedScale);
+    this.boss.setY(this.getBossDefeatedY(defeatedKey, defeatedScale));
+    this.setHealthBarsVisible(false);
+    this.hideBossSplash();
+    this.removeArenaWall();
+    this.clearProjectiles();
+    this.goal.enableBody(false, this.goal.x, this.goal.y, true, true);
+    this.goal.refreshBody();
+    this.setArenaCamera();
+    this.showToast('Boss besiegt!');
+  }
+
+  loseBossFight() {
+    this.bossFightActive = false;
+    this.bossIntroActive = false;
+    this.bossCountdownActive = false;
+    this.awaitingBossRetry = true;
+    this.playerIsHit = false;
+    this.playerBossContactDamageArmed = true;
+    this.bossIsHit = false;
+    this.bossState = 'stand';
+    this.nextBossAttackAt = 0;
+    this.boss.setVelocity(0, 0);
+    this.boss.body.enable = true;
+    this.playerMaxHp = this.getPlayerBossMaxHp();
+    this.playerHp = this.playerMaxHp;
+    this.bossHp = this.bossMaxHp;
+    const standKey = `boss-${this.level.id}-stand`;
+    this.boss.setTexture(standKey);
+    this.boss.setScale(this.bossScale);
+    this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
+    this.configureBossBody();
+    this.clearProjectiles();
+    this.hideBossSplash();
+    this.setHealthBarsVisible(false);
+    this.placePlayerAtBossStart();
+    this.setArenaCamera();
+    this.showBossRetryUi();
+  }
+
+  configureBossBody() {
+    if (!this.bossBodyBounds) {
+      const bounds = this.getTextureContentBounds(`boss-${this.level.id}-stand`);
+      const width = bounds.width * BOSS_BODY_WIDTH_RATIO;
+      const height = bounds.height * BOSS_BODY_HEIGHT_RATIO;
+      this.bossBodyBounds = {
+        x: bounds.x + (bounds.width - width) / 2,
+        y: bounds.y + bounds.height - height + bounds.height * BOSS_BODY_VERTICAL_SHIFT_RATIO,
+        width,
+        height,
+      };
+    }
+
+    this.boss.body.setSize(this.bossBodyBounds.width, this.bossBodyBounds.height);
+    this.boss.body.setOffset(this.bossBodyBounds.x, this.bossBodyBounds.y);
+  }
+
+  getBossBodyWorldWidth() {
+    if (!this.bossBodyBounds) {
+      return this.boss.displayWidth;
+    }
+
+    return this.bossBodyBounds.width * this.bossScale;
+  }
+
+  clearProjectiles() {
+    this.projectiles.children.each((projectile) => {
+      projectile.destroy();
+    });
+  }
+
+  destroyProjectile(projectile) {
+    projectile.destroy();
+  }
+
+  setHealthBarsVisible(visible) {
+    [
+      this.playerHealthLabel,
+      this.playerHealthBack,
+      this.playerHealthFill,
+      this.playerHealthValue,
+      this.bossHealthLabel,
+      this.bossHealthBack,
+      this.bossHealthFill,
+      this.bossHealthValue,
+    ].forEach((entry) => entry.setVisible(visible));
+  }
+
+  refreshHealthBars() {
+    const playerRatio = this.playerMaxHp > 0 ? this.playerHp / this.playerMaxHp : 0;
+    const bossRatio = this.bossMaxHp > 0 ? this.bossHp / this.bossMaxHp : 0;
+
+    this.playerHealthFill.width =
+      HEALTH_BAR_WIDTH * playerRatio;
+    this.bossHealthFill.width =
+      HEALTH_BAR_WIDTH * bossRatio;
+    this.playerHealthValue.setText(`${this.playerHp}/${this.playerMaxHp}`);
+    this.bossHealthValue.setText(`${this.bossHp}/${this.bossMaxHp}`);
+  }
+
   collectPickup(player, pickup) {
     if (!pickup.active) {
       return;
     }
 
     const value = pickup.getData('value') ?? 0;
+    const bossHpBonus = pickup.getData('bossHpBonus') ?? 0;
     this.score += value;
+    this.levelCoinHpBonus = Math.min(
+      this.level.coins.length,
+      this.levelCoinHpBonus + bossHpBonus,
+    );
     pickup.disableBody(true, true);
 
     this.showToast(value >= 10 ? '+10 Bonus Ball' : '+1 Coin');
     this.refreshHud();
+  }
+
+  getPlayerBossMaxHp() {
+    return Phaser.Math.Clamp(
+      BOSS_BASE_HP + this.levelCoinHpBonus,
+      BOSS_BASE_HP,
+      this.bossMaxHp,
+    );
+  }
+
+  loseCoins(amount) {
+    const coinsLost = Math.max(0, Math.min(amount, this.score));
+
+    if (coinsLost <= 0) {
+      return 0;
+    }
+
+    this.score -= coinsLost;
+    this.levelCoinHpBonus = Math.max(0, this.levelCoinHpBonus - coinsLost);
+    this.playerMaxHp = this.getPlayerBossMaxHp();
+    this.playerHp = Math.min(this.playerHp, this.playerMaxHp);
+    this.refreshHealthBars();
+
+    return coinsLost;
   }
 
   activateCheckpoint(player, checkpoint) {
@@ -457,7 +1533,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   completeLevel() {
-    if (this.levelComplete) {
+    if (this.levelComplete || !this.bossDefeated) {
       return;
     }
 
@@ -481,6 +1557,7 @@ export class LevelScene extends Phaser.Scene {
         this.scene.start('LevelScene', {
           levelIndex: nextIndex,
           score: this.score,
+          levelStartScore: this.score,
           highScore: this.highScore,
         });
         return;
@@ -499,13 +1576,15 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.isRespawning = true;
+    let lostCoins = 0;
 
     if (!isManual) {
-      this.score = Math.max(0, this.score - FALL_PENALTY);
+      lostCoins = this.loseCoins(FALL_PENALTY);
       this.refreshHud();
     }
 
     this.player.body.reset(this.respawnPoint.x, this.respawnPoint.y);
+    this.playerBossContactDamageArmed = true;
     this.player.setVelocity(0, 0);
     this.player.clearTint();
     this.playerState = 'stand';
@@ -514,7 +1593,7 @@ export class LevelScene extends Phaser.Scene {
     this.player.setTexture('char-stand');
     this.configurePlayerBody();
     this.cameras.main.shake(150, 0.004);
-    this.showToast(isManual ? 'Respawn' : `Fallstrafe -${FALL_PENALTY} Coins`);
+    this.showToast(isManual ? 'Respawn' : `Fallstrafe -${lostCoins} Coins`);
 
     this.time.delayedCall(150, () => {
       this.isRespawning = false;
