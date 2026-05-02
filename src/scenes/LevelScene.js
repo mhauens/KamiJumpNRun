@@ -30,6 +30,7 @@ const BOSS_HIT_BOUNCE = -520;
 const BOSS_STOMP_MIN_HEIGHT = 20;
 const BOSS_STOMP_MAX_HEIGHT = 112;
 const BOSS_STOMP_EXTRA_WIDTH = 24;
+const BOSS_DIRECTION_DEADZONE = 36;
 const BOSS_CONTACT_DAMAGE_HEIGHT = 46;
 const PLAYER_HIT_LOCK_MS = 1000;
 const BOSS_HIT_LOCK_MS = 1000;
@@ -987,34 +988,42 @@ export class LevelScene extends Phaser.Scene {
   }
 
   createArenaWall() {
-    if (this.arenaWall) {
+    if (this.arenaLeftWall && this.arenaRightWall) {
       return;
     }
 
-    this.arenaWall = this.physics.add.staticImage(
-      this.level.boss.arenaLeft,
+    this.arenaLeftWall = this.createArenaBoundary(this.level.boss.arenaLeft);
+    this.arenaRightWall = this.createArenaBoundary(this.level.boss.arenaRight);
+
+    this.arenaWallColliders = [
+      this.physics.add.collider(this.player, this.arenaLeftWall),
+      this.physics.add.collider(this.player, this.arenaRightWall),
+    ];
+  }
+
+  createArenaBoundary(x) {
+    const wall = this.physics.add.staticImage(
+      x,
       GAME_HEIGHT / 2,
       'platform-hitbox',
     );
 
-    this.arenaWall
+    wall
       .setDisplaySize(24, GAME_HEIGHT)
       .setVisible(false)
       .refreshBody();
 
-    this.arenaWallCollider = this.physics.add.collider(this.player, this.arenaWall);
+    return wall;
   }
 
   removeArenaWall() {
-    if (this.arenaWallCollider) {
-      this.arenaWallCollider.destroy();
-      this.arenaWallCollider = null;
-    }
+    this.arenaWallColliders?.forEach((collider) => collider.destroy());
+    this.arenaWallColliders = null;
 
-    if (this.arenaWall) {
-      this.arenaWall.destroy();
-      this.arenaWall = null;
-    }
+    this.arenaLeftWall?.destroy();
+    this.arenaLeftWall = null;
+    this.arenaRightWall?.destroy();
+    this.arenaRightWall = null;
   }
 
   fitImageToScreen(image) {
@@ -1127,6 +1136,10 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.bossState = 'patrol';
+    const horizontalDistanceToPlayer = this.player.x - this.boss.x;
+    if (Math.abs(horizontalDistanceToPlayer) > BOSS_DIRECTION_DEADZONE) {
+      this.bossDirection = horizontalDistanceToPlayer < 0 ? -1 : 1;
+    }
     this.boss.setVelocityX(this.bossDirection * bossConfig.speed);
 
     if (this.boss.x <= bossConfig.arenaLeft + 80) {
@@ -1137,7 +1150,8 @@ export class LevelScene extends Phaser.Scene {
       this.boss.setX(bossConfig.arenaRight - 80);
     }
 
-    this.boss.setFlipX(this.player.x < this.boss.x);
+    this.boss.setVelocityX(this.bossDirection * bossConfig.speed);
+    this.boss.setFlipX(this.bossDirection < 0);
     this.boss.play(`boss-${this.level.id}-move`, true);
     this.alignBossToFloor();
   }

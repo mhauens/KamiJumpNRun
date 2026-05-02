@@ -18,6 +18,7 @@ const SHEET_COLUMNS = 4;
 const SHEET_ROWS = 2;
 const BOSS_FRAME_GUTTER = 10;
 const BOSS_FRAME_PADDING = 8;
+const BOSS_2_ATTACK_FRAME_OVERFLOW = 80;
 const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
@@ -355,7 +356,7 @@ export class BootScene extends Phaser.Scene {
 
     for (let row = 0; row < SHEET_ROWS; row += 1) {
       for (let column = 0; column < SHEET_COLUMNS; column += 1) {
-        const frameRect = this.getBossSheetFrameRect(sourceImage, column, row);
+        const frameRect = this.getBossSheetFrameRect(sourceImage, column, row, sourceKey);
         const sourceCanvas = document.createElement('canvas');
         sourceCanvas.width = frameRect.width;
         sourceCanvas.height = frameRect.height;
@@ -374,8 +375,8 @@ export class BootScene extends Phaser.Scene {
           frameRect.height,
         );
 
-        this.clearWhiteBackground(sourceContext, frameRect.width, frameRect.height);
-        const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas);
+        this.clearEdgeWhiteBackground(sourceContext, frameRect.width, frameRect.height);
+        const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas, true);
         bounds.push(sourceBounds);
       }
     }
@@ -390,7 +391,7 @@ export class BootScene extends Phaser.Scene {
       for (let column = 0; column < SHEET_COLUMNS; column += 1) {
         const frameIndex = row * SHEET_COLUMNS + column + 1;
         const targetKey = `${framePrefix}-${frameIndex}`;
-        const frameRect = this.getBossSheetFrameRect(sourceImage, column, row);
+        const frameRect = this.getBossSheetFrameRect(sourceImage, column, row, sourceKey);
 
         if (this.textures.exists(targetKey)) {
           continue;
@@ -414,8 +415,8 @@ export class BootScene extends Phaser.Scene {
           frameRect.height,
         );
 
-        this.clearWhiteBackground(sourceContext, frameRect.width, frameRect.height);
-        const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas);
+        this.clearEdgeWhiteBackground(sourceContext, frameRect.width, frameRect.height);
+        const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas, true);
 
         const canvas = document.createElement('canvas');
         canvas.width = layout.canvasWidth;
@@ -446,14 +447,20 @@ export class BootScene extends Phaser.Scene {
     }
   }
 
-  getBossSheetFrameRect(image, column, row) {
+  getBossSheetFrameRect(image, column, row, sourceKey) {
     const frameRect = this.getSheetFrameRect(image, column, row);
+    const gutter = sourceKey === 'boss-2-attack-source' ? 0 : BOSS_FRAME_GUTTER;
+    const overflow = sourceKey === 'boss-2-attack-source' ? BOSS_2_ATTACK_FRAME_OVERFLOW : 0;
+    const x = Math.max(0, frameRect.x + gutter - overflow);
+    const y = frameRect.y + gutter;
+    const right = Math.min(image.width, frameRect.x + frameRect.width - gutter + overflow);
+    const bottom = frameRect.y + frameRect.height - gutter;
 
     return {
-      x: frameRect.x + BOSS_FRAME_GUTTER,
-      y: frameRect.y + BOSS_FRAME_GUTTER,
-      width: Math.max(1, frameRect.width - BOSS_FRAME_GUTTER * 2),
-      height: Math.max(1, frameRect.height - BOSS_FRAME_GUTTER * 2),
+      x,
+      y,
+      width: Math.max(1, right - x),
+      height: Math.max(1, bottom - y),
     };
   }
 
@@ -504,8 +511,8 @@ export class BootScene extends Phaser.Scene {
     };
   }
 
-  getSignificantVisibleBounds(image) {
-    const components = this.getVisibleComponents(image);
+  getSignificantVisibleBounds(image, useAlphaOnly = false) {
+    const components = this.getVisibleComponents(image, useAlphaOnly);
 
     if (components.length === 0) {
       return { x: 0, y: 0, width: image.width, height: image.height };
@@ -540,7 +547,7 @@ export class BootScene extends Phaser.Scene {
     };
   }
 
-  getVisibleComponents(image) {
+  getVisibleComponents(image, useAlphaOnly = false) {
     const canvas = document.createElement('canvas');
     canvas.width = image.width;
     canvas.height = image.height;
@@ -561,7 +568,7 @@ export class BootScene extends Phaser.Scene {
       const alpha = pixels[dataIndex + 3];
       const isWhiteBackground = red > 245 && green > 245 && blue > 245;
 
-      return alpha > 0 && !isWhiteBackground;
+      return alpha > 0 && (useAlphaOnly || !isWhiteBackground);
     };
 
     for (let pixelIndex = 0; pixelIndex < visited.length; pixelIndex += 1) {
@@ -717,6 +724,67 @@ export class BootScene extends Phaser.Scene {
 
       if (alpha > 0 && red > 245 && green > 245 && blue > 245) {
         pixels[index + 3] = 0;
+      }
+    }
+
+    context.putImageData(frameData, 0, 0);
+  }
+
+  clearEdgeWhiteBackground(context, width, height) {
+    const frameData = context.getImageData(0, 0, width, height);
+    const pixels = frameData.data;
+    const visited = new Uint8Array(width * height);
+    const stack = [];
+
+    const isWhitePixel = (pixelIndex) => {
+      const dataIndex = pixelIndex * 4;
+      return pixels[dataIndex + 3] > 0 &&
+        pixels[dataIndex] > 245 &&
+        pixels[dataIndex + 1] > 245 &&
+        pixels[dataIndex + 2] > 245;
+    };
+
+    const visit = (pixelIndex) => {
+      if (visited[pixelIndex] || !isWhitePixel(pixelIndex)) {
+        return;
+      }
+
+      visited[pixelIndex] = 1;
+      stack.push(pixelIndex);
+    };
+
+    for (let x = 0; x < width; x += 1) {
+      visit(x);
+      visit((height - 1) * width + x);
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      visit(y * width);
+      visit(y * width + width - 1);
+    }
+
+    while (stack.length > 0) {
+      const pixelIndex = stack.pop();
+      const dataIndex = pixelIndex * 4;
+      const x = pixelIndex % width;
+      const y = Math.floor(pixelIndex / width);
+
+      pixels[dataIndex + 3] = 0;
+
+      if (x > 0) {
+        visit(pixelIndex - 1);
+      }
+
+      if (x < width - 1) {
+        visit(pixelIndex + 1);
+      }
+
+      if (y > 0) {
+        visit(pixelIndex - width);
+      }
+
+      if (y < height - 1) {
+        visit(pixelIndex + width);
       }
     }
 
