@@ -334,13 +334,10 @@ export class BootScene extends Phaser.Scene {
       targetBounds.width,
       ...frameBounds.map((bounds) => bounds.width * (targetBounds.height / bounds.height)),
     );
-    const canvasWidth = Math.max(
-      targetImage.width,
-      Math.ceil(maxDrawWidth + BOSS_FRAME_PADDING * 2),
-    );
-    const canvasHeight = targetImage.height;
+    const canvasWidth = Math.ceil(maxDrawWidth + BOSS_FRAME_PADDING * 2);
+    const canvasHeight = Math.ceil(targetBounds.height + BOSS_FRAME_PADDING * 2);
     const centerX = canvasWidth / 2;
-    const baselineY = targetBounds.y + targetBounds.height;
+    const baselineY = canvasHeight - BOSS_FRAME_PADDING;
 
     return {
       bossId,
