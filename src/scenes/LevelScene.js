@@ -79,6 +79,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   create() {
+    this.ensureBossAnimations();
     this.createWorld();
     this.createPlatforms();
     this.createPlayer();
@@ -91,6 +92,10 @@ export class LevelScene extends Phaser.Scene {
     this.configureCollisions();
     this.configureCamera();
     this.showToast(`Level ${this.level.id}: ${this.level.name}`);
+  }
+
+  ensureBossAnimations() {
+    this.scene.get('BootScene')?.createBossAnimations(this.level.id);
   }
 
   createWorld() {

@@ -82,7 +82,6 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     this.createCharacterWalkTextures();
-    this.createBossAnimations();
     this.createGeneratedTextures();
 
     this.scene.start('StartScene');
@@ -245,42 +244,46 @@ export class BootScene extends Phaser.Scene {
     this.textures.addCanvas(targetKey, canvas);
   }
 
-  createBossAnimations() {
-    BOSS_ASSETS.forEach((asset) => {
-      const bossLayout = this.createBossFrameLayout(asset.id, [
-        `boss-${asset.id}-move-source`,
-        `boss-${asset.id}-hit-source`,
-        `boss-${asset.id}-attack-source`,
-      ]);
+  createBossAnimations(levelId) {
+    const asset = BOSS_ASSETS.find((entry) => entry.id === levelId);
 
-      this.createBossFrames(`boss-${asset.id}-move-source`, `boss-${asset.id}-move-frame`, bossLayout);
-      this.createBossFrames(`boss-${asset.id}-hit-source`, `boss-${asset.id}-hit-frame`, bossLayout);
-      this.createBossFrames(`boss-${asset.id}-attack-source`, `boss-${asset.id}-attack-frame`, bossLayout);
-      this.createPlayerHitFrames(
-        `player-hit-boss-${asset.id}-source`,
-        `player-hit-boss-${asset.id}-frame`,
-      );
+    if (!asset || this.anims.exists(`boss-${asset.id}-move`)) {
+      return;
+    }
 
-      this.createAnimation(`boss-${asset.id}-move`, `boss-${asset.id}-move-frame`, 8, -1);
-      this.createAnimation(
-        `boss-${asset.id}-hit`,
-        `boss-${asset.id}-hit-frame`,
-        HIT_ANIMATION_FRAME_RATE,
-        0,
-      );
-      this.createAnimation(
-        `boss-${asset.id}-attack`,
-        `boss-${asset.id}-attack-frame`,
-        ATTACK_ANIMATION_FRAME_RATE,
-        0,
-      );
-      this.createAnimation(
-        `player-hit-boss-${asset.id}`,
-        `player-hit-boss-${asset.id}-frame`,
-        HIT_ANIMATION_FRAME_RATE,
-        0,
-      );
-    });
+    const bossLayout = this.createBossFrameLayout(asset.id, [
+      `boss-${asset.id}-move-source`,
+      `boss-${asset.id}-hit-source`,
+      `boss-${asset.id}-attack-source`,
+    ]);
+
+    this.createBossFrames(`boss-${asset.id}-move-source`, `boss-${asset.id}-move-frame`, bossLayout);
+    this.createBossFrames(`boss-${asset.id}-hit-source`, `boss-${asset.id}-hit-frame`, bossLayout);
+    this.createBossFrames(`boss-${asset.id}-attack-source`, `boss-${asset.id}-attack-frame`, bossLayout);
+    this.createPlayerHitFrames(
+      `player-hit-boss-${asset.id}-source`,
+      `player-hit-boss-${asset.id}-frame`,
+    );
+
+    this.createAnimation(`boss-${asset.id}-move`, `boss-${asset.id}-move-frame`, 8, -1);
+    this.createAnimation(
+      `boss-${asset.id}-hit`,
+      `boss-${asset.id}-hit-frame`,
+      HIT_ANIMATION_FRAME_RATE,
+      0,
+    );
+    this.createAnimation(
+      `boss-${asset.id}-attack`,
+      `boss-${asset.id}-attack-frame`,
+      ATTACK_ANIMATION_FRAME_RATE,
+      0,
+    );
+    this.createAnimation(
+      `player-hit-boss-${asset.id}`,
+      `player-hit-boss-${asset.id}-frame`,
+      HIT_ANIMATION_FRAME_RATE,
+      0,
+    );
   }
 
   createSheetFrames(sourceKey, framePrefix) {
