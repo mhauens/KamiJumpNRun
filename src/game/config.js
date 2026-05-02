@@ -5,8 +5,14 @@ import { StartScene } from '../scenes/StartScene.js';
 import { LevelScene } from '../scenes/LevelScene.js';
 import { EndScene } from '../scenes/EndScene.js';
 
+const isAppleTouchDevice = typeof navigator !== 'undefined' &&
+  (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+
 export const gameConfig = {
-  type: Phaser.AUTO,
+  type: isAppleTouchDevice ? Phaser.CANVAS : Phaser.AUTO,
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: '#7ed2ff',
