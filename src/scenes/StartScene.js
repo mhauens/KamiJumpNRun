@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
+import { resolveStartLevelIndex } from '../game/devConfig.js';
 
 const BUTTON_WIDTH = 260;
 const BUTTON_HEIGHT = 92;
@@ -107,7 +108,7 @@ export class StartScene extends Phaser.Scene {
 
   startGame() {
     this.scene.start('LevelScene', {
-      levelIndex: 0,
+      levelIndex: resolveStartLevelIndex(),
       score: 0,
     });
   }

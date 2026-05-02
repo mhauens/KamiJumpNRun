@@ -8,6 +8,10 @@ const BOSS_DEFAULTS = {
   shotOffsetX: 58,
   shotOffsetY: -104,
   shotScale: 0.18,
+  shotBodyWidth: 34,
+  shotBodyHeight: 18,
+  defeatedScaleMultiplier: 2.75,
+  defeatedFootSink: 108,
   damage: 1,
 };
 const BOSS_ARENA_AFTER_PICKUP_PADDING = 180;
@@ -43,6 +47,7 @@ function withBossDefaults(level) {
   });
   const boss = {
     ...BOSS_DEFAULTS,
+    ...(level.boss ?? {}),
     triggerX: arenaLeft - 40,
     arenaLeft,
     arenaRight,
@@ -165,6 +170,15 @@ export const LEVELS = [
       { x: 2230, y: 500, label: 'Checkpoint 2' },
     ],
     goal: { x: 3270, y: 510, width: 56, height: 90 },
+    boss: {
+      shotOffsetX: 68,
+      shotOffsetY: -88,
+      shotScale: 0.55,
+      shotBodyWidth: 42,
+      shotBodyHeight: 28,
+      defeatedScaleMultiplier: 0.72,
+      defeatedFootSink: 20,
+    },
   },
   {
     id: 3,

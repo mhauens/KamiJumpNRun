@@ -1,26 +1,28 @@
 import Phaser from 'phaser';
-import mainCharStandUrl from '../../assets/mainChar_stand.png';
-import mainCharJumpUrl from '../../assets/mainChar_jump.png';
-import mainCharWalkUrl from '../../assets/mainChar_walk.png';
-import backgroundUrl from '../../assets/background.png';
-import bridgeHillsBackgroundUrl from '../../assets/bridge_hills_background.png';
-import skyRouteBackgroundUrl from '../../assets/sky_route_background.png';
-import cloudGardenBackgroundUrl from '../../assets/cloud_garden_background.png';
-import championRidgeBackgroundUrl from '../../assets/champion_ridge_background.png';
-import riverStepsBackgroundUrl from '../../assets/river_steps_background.png';
-import groundPlatformUrl from '../../assets/ground_platform.png';
-import levelTemplateUrl from '../../assets/level_template.png';
-import startScreenUrl from '../../assets/start_screen.png';
+import mainCharStandUrl from '../../assets/mainChar/mainChar_stand.png';
+import mainCharJumpUrl from '../../assets/mainChar/mainChar_jump.png';
+import mainCharWalkUrl from '../../assets/mainChar/mainChar_walk.png';
+import backgroundUrl from '../../assets/backgrounds/background.png';
+import bridgeHillsBackgroundUrl from '../../assets/backgrounds/bridge_hills_background.png';
+import skyRouteBackgroundUrl from '../../assets/backgrounds/sky_route_background.png';
+import cloudGardenBackgroundUrl from '../../assets/backgrounds/cloud_garden_background.png';
+import championRidgeBackgroundUrl from '../../assets/backgrounds/champion_ridge_background.png';
+import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_background.png';
+import groundPlatformUrl from '../../assets/shared/ground_platform.png';
+import levelTemplateUrl from '../../assets/shared/level_template.png';
+import startScreenUrl from '../../assets/shared/start_screen.png';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 230;
 const SHEET_COLUMNS = 4;
 const SHEET_ROWS = 2;
 const BOSS_FRAME_GUTTER = 10;
+const BOSS_FRAME_PADDING = 8;
+const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
 const BOSS_LEVEL_COUNT = 6;
-const assetUrls = import.meta.glob('../../assets/*.png', {
+const assetUrls = import.meta.glob('../../assets/**/*.png', {
   eager: true,
   import: 'default',
   query: '?url',
@@ -31,7 +33,9 @@ function resolveBossAsset(levelId, filePattern) {
   const fallbackFileName = filePattern(1);
 
   return (
+    assetUrls[`../../assets/boss_${levelId}/${fileName}`] ??
     assetUrls[`../../assets/${fileName}`] ??
+    assetUrls[`../../assets/boss_1/${fallbackFileName}`] ??
     assetUrls[`../../assets/${fallbackFileName}`]
   );
 }
@@ -322,97 +326,96 @@ export class BootScene extends Phaser.Scene {
   createBossFrameLayout(bossId, sourceKeys) {
     const targetImage = this.textures.get(`boss-${bossId}-stand`).getSourceImage();
     const targetBounds = this.getVisibleBounds(targetImage);
+    const frameBounds = sourceKeys.flatMap((sourceKey) => this.getBossSheetFrameBounds(sourceKey));
     const maxDrawWidth = Math.max(
       targetBounds.width,
-      ...sourceKeys.flatMap((sourceKey) => this.getBossFrameDrawWidths(sourceKey, targetBounds.height)),
+      ...frameBounds.map((bounds) => bounds.width * (targetBounds.height / bounds.height)),
     );
-    const canvasWidth = Math.max(targetImage.width, Math.ceil(maxDrawWidth + targetBounds.x * 2));
+    const canvasWidth = Math.max(
+      targetImage.width,
+      Math.ceil(maxDrawWidth + BOSS_FRAME_PADDING * 2),
+    );
+    const canvasHeight = targetImage.height;
+    const centerX = canvasWidth / 2;
+    const baselineY = targetBounds.y + targetBounds.height;
 
     return {
       bossId,
       canvasWidth,
-      canvasHeight: targetImage.height,
-      targetBounds: {
-        ...targetBounds,
-        x: (canvasWidth - targetBounds.width) / 2,
-      },
+      canvasHeight,
+      centerX,
+      baselineY,
+      targetHeight: targetBounds.height,
     };
   }
 
-  getBossFrameDrawWidths(sourceKey, targetHeight) {
+  getBossSheetFrameBounds(sourceKey) {
     const sourceImage = this.textures.get(sourceKey).getSourceImage();
-    const frameWidth = Math.floor(sourceImage.width / SHEET_COLUMNS);
-    const frameHeight = Math.floor(sourceImage.height / SHEET_ROWS);
-    const croppedFrameWidth = frameWidth - BOSS_FRAME_GUTTER * 2;
-    const croppedFrameHeight = frameHeight - BOSS_FRAME_GUTTER * 2;
-    const widths = [];
+    const bounds = [];
 
     for (let row = 0; row < SHEET_ROWS; row += 1) {
       for (let column = 0; column < SHEET_COLUMNS; column += 1) {
+        const frameRect = this.getBossSheetFrameRect(sourceImage, column, row);
         const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = croppedFrameWidth;
-        sourceCanvas.height = croppedFrameHeight;
+        sourceCanvas.width = frameRect.width;
+        sourceCanvas.height = frameRect.height;
 
         const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
         sourceContext.imageSmoothingEnabled = false;
         sourceContext.drawImage(
           sourceImage,
-          column * frameWidth + BOSS_FRAME_GUTTER,
-          row * frameHeight + BOSS_FRAME_GUTTER,
-          croppedFrameWidth,
-          croppedFrameHeight,
+          frameRect.x,
+          frameRect.y,
+          frameRect.width,
+          frameRect.height,
           0,
           0,
-          croppedFrameWidth,
-          croppedFrameHeight,
+          frameRect.width,
+          frameRect.height,
         );
 
-        this.clearWhiteBackground(sourceContext, croppedFrameWidth, croppedFrameHeight);
-        const sourceBounds = this.getVisibleBounds(sourceCanvas);
-        widths.push(sourceBounds.width * (targetHeight / sourceBounds.height));
+        this.clearWhiteBackground(sourceContext, frameRect.width, frameRect.height);
+        const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas);
+        bounds.push(sourceBounds);
       }
     }
 
-    return widths;
+    return bounds;
   }
 
   createBossFrames(sourceKey, framePrefix, layout) {
     const sourceImage = this.textures.get(sourceKey).getSourceImage();
-    const { targetBounds } = layout;
-    const frameWidth = Math.floor(sourceImage.width / SHEET_COLUMNS);
-    const frameHeight = Math.floor(sourceImage.height / SHEET_ROWS);
-    const croppedFrameWidth = frameWidth - BOSS_FRAME_GUTTER * 2;
-    const croppedFrameHeight = frameHeight - BOSS_FRAME_GUTTER * 2;
 
     for (let row = 0; row < SHEET_ROWS; row += 1) {
       for (let column = 0; column < SHEET_COLUMNS; column += 1) {
         const frameIndex = row * SHEET_COLUMNS + column + 1;
         const targetKey = `${framePrefix}-${frameIndex}`;
+        const frameRect = this.getBossSheetFrameRect(sourceImage, column, row);
 
         if (this.textures.exists(targetKey)) {
           continue;
         }
 
         const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = croppedFrameWidth;
-        sourceCanvas.height = croppedFrameHeight;
+        sourceCanvas.width = frameRect.width;
+        sourceCanvas.height = frameRect.height;
 
         const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
         sourceContext.imageSmoothingEnabled = false;
         sourceContext.drawImage(
           sourceImage,
-          column * frameWidth + BOSS_FRAME_GUTTER,
-          row * frameHeight + BOSS_FRAME_GUTTER,
-          croppedFrameWidth,
-          croppedFrameHeight,
+          frameRect.x,
+          frameRect.y,
+          frameRect.width,
+          frameRect.height,
           0,
           0,
-          croppedFrameWidth,
-          croppedFrameHeight,
+          frameRect.width,
+          frameRect.height,
         );
 
-        this.clearWhiteBackground(sourceContext, croppedFrameWidth, croppedFrameHeight);
-        const sourceBounds = this.getVisibleBounds(sourceCanvas);
+        this.clearWhiteBackground(sourceContext, frameRect.width, frameRect.height);
+        const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas);
 
         const canvas = document.createElement('canvas');
         canvas.width = layout.canvasWidth;
@@ -420,11 +423,11 @@ export class BootScene extends Phaser.Scene {
 
         const context = canvas.getContext('2d');
         context.imageSmoothingEnabled = false;
-        const scale = targetBounds.height / sourceBounds.height;
+        const scale = layout.targetHeight / sourceBounds.height;
         const drawWidth = sourceBounds.width * scale;
         const drawHeight = sourceBounds.height * scale;
-        const drawX = targetBounds.x + (targetBounds.width - drawWidth) / 2;
-        const drawY = targetBounds.y + targetBounds.height - drawHeight;
+        const drawX = layout.centerX - drawWidth / 2;
+        const drawY = layout.baselineY - drawHeight;
 
         context.drawImage(
           sourceCanvas,
@@ -441,6 +444,17 @@ export class BootScene extends Phaser.Scene {
         this.textures.addCanvas(targetKey, canvas);
       }
     }
+  }
+
+  getBossSheetFrameRect(image, column, row) {
+    const frameRect = this.getSheetFrameRect(image, column, row);
+
+    return {
+      x: frameRect.x + BOSS_FRAME_GUTTER,
+      y: frameRect.y + BOSS_FRAME_GUTTER,
+      width: Math.max(1, frameRect.width - BOSS_FRAME_GUTTER * 2),
+      height: Math.max(1, frameRect.height - BOSS_FRAME_GUTTER * 2),
+    };
   }
 
   getVisibleBounds(image) {
@@ -488,6 +502,128 @@ export class BootScene extends Phaser.Scene {
       width: maxX - minX + 1,
       height: maxY - minY + 1,
     };
+  }
+
+  getSignificantVisibleBounds(image) {
+    const components = this.getVisibleComponents(image);
+
+    if (components.length === 0) {
+      return { x: 0, y: 0, width: image.width, height: image.height };
+    }
+
+    const largestPixelCount = components[0].pixelCount;
+    const significantComponents = components.filter(
+      (component, index) => index === 0 ||
+        (
+          component.pixelCount >= largestPixelCount * BOSS_SIGNIFICANT_COMPONENT_RATIO &&
+          !component.touchesEdge
+        ),
+    );
+    const componentsToUse = significantComponents.length > 0
+      ? significantComponents
+      : [components[0]];
+
+    const minX = Math.min(...componentsToUse.map((component) => component.x));
+    const minY = Math.min(...componentsToUse.map((component) => component.y));
+    const maxX = Math.max(
+      ...componentsToUse.map((component) => component.x + component.width - 1),
+    );
+    const maxY = Math.max(
+      ...componentsToUse.map((component) => component.y + component.height - 1),
+    );
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  }
+
+  getVisibleComponents(image) {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const visited = new Uint8Array(canvas.width * canvas.height);
+    const components = [];
+    const stack = [];
+
+    const isVisiblePixel = (pixelIndex) => {
+      const dataIndex = pixelIndex * 4;
+      const red = pixels[dataIndex];
+      const green = pixels[dataIndex + 1];
+      const blue = pixels[dataIndex + 2];
+      const alpha = pixels[dataIndex + 3];
+      const isWhiteBackground = red > 245 && green > 245 && blue > 245;
+
+      return alpha > 0 && !isWhiteBackground;
+    };
+
+    for (let pixelIndex = 0; pixelIndex < visited.length; pixelIndex += 1) {
+      if (visited[pixelIndex] || !isVisiblePixel(pixelIndex)) {
+        continue;
+      }
+
+      let minX = canvas.width;
+      let minY = canvas.height;
+      let maxX = 0;
+      let maxY = 0;
+      let pixelCount = 0;
+
+      visited[pixelIndex] = 1;
+      stack.push(pixelIndex);
+
+      while (stack.length > 0) {
+        const currentIndex = stack.pop();
+        const x = currentIndex % canvas.width;
+        const y = Math.floor(currentIndex / canvas.width);
+
+        pixelCount += 1;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+
+        const neighborIndexes = [
+          x > 0 ? currentIndex - 1 : -1,
+          x < canvas.width - 1 ? currentIndex + 1 : -1,
+          y > 0 ? currentIndex - canvas.width : -1,
+          y < canvas.height - 1 ? currentIndex + canvas.width : -1,
+        ];
+
+        neighborIndexes.forEach((neighborIndex) => {
+          if (
+            neighborIndex === -1 ||
+            visited[neighborIndex] ||
+            !isVisiblePixel(neighborIndex)
+          ) {
+            return;
+          }
+
+          visited[neighborIndex] = 1;
+          stack.push(neighborIndex);
+        });
+      }
+
+      components.push({
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+        pixelCount,
+        touchesEdge: minX === 0 ||
+          minY === 0 ||
+          maxX === canvas.width - 1 ||
+          maxY === canvas.height - 1,
+      });
+    }
+
+    return components.sort((a, b) => b.pixelCount - a.pixelCount);
   }
 
   getSheetFrameRect(image, column, row) {

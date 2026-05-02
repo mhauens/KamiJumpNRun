@@ -22,8 +22,6 @@ const HUD_TEXT_X = 34;
 const HUD_HELP_WRAP_WIDTH = HUD_PANEL_WIDTH - 32;
 const BOSS_FOOT_SINK = 4;
 const BOSS_SCALE_MULTIPLIER = 1.22;
-const BOSS_DEFEATED_SCALE_MULTIPLIER = 2.75;
-const BOSS_DEFEATED_FOOT_SINK = 108;
 const BOSS_BODY_WIDTH_RATIO = 0.62;
 const BOSS_BODY_HEIGHT_RATIO = 0.24;
 const BOSS_BODY_VERTICAL_SHIFT_RATIO = 0;
@@ -35,8 +33,6 @@ const BOSS_STOMP_EXTRA_WIDTH = 24;
 const BOSS_CONTACT_DAMAGE_HEIGHT = 46;
 const PLAYER_HIT_LOCK_MS = 1000;
 const BOSS_HIT_LOCK_MS = 1000;
-const PROJECTILE_WIDTH = 34;
-const PROJECTILE_HEIGHT = 18;
 const HEALTH_BAR_WIDTH = 220;
 const HEALTH_BAR_HEIGHT = 18;
 const PLAYER_ARENA_FOOT_SINK = 30;
@@ -887,13 +883,13 @@ export class LevelScene extends Phaser.Scene {
     const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
     const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
 
-    return (playerVisibleHeight / defeatedVisibleHeight) * BOSS_DEFEATED_SCALE_MULTIPLIER;
+    return (playerVisibleHeight / defeatedVisibleHeight) * this.level.boss.defeatedScaleMultiplier;
   }
 
   getBossDefeatedY(defeatedKey, defeatedScale) {
     return this.level.boss.floorY +
       this.getTextureBottomPadding(defeatedKey) * defeatedScale +
-      BOSS_DEFEATED_FOOT_SINK;
+      this.level.boss.defeatedFootSink;
   }
 
   resolveBossScale(standKey) {
@@ -1196,11 +1192,12 @@ export class LevelScene extends Phaser.Scene {
   fireBossProjectile() {
     const direction = this.player.x < this.boss.x ? -1 : 1;
     const bossConfig = this.level.boss;
+    const textureKey = `boss-${this.level.id}-shot`;
     const projectile = this.projectiles
       .create(
         this.boss.x + direction * bossConfig.shotOffsetX,
         this.boss.y + bossConfig.shotOffsetY,
-        `boss-${this.level.id}-shot`,
+        textureKey,
       )
       .setOrigin(0.5)
       .setScale(bossConfig.shotScale)
@@ -1209,13 +1206,25 @@ export class LevelScene extends Phaser.Scene {
 
     projectile.body.setAllowGravity(false);
     projectile.body.setSize(
-      PROJECTILE_WIDTH / projectile.scaleX,
-      PROJECTILE_HEIGHT / projectile.scaleY,
+      bossConfig.shotBodyWidth / projectile.scaleX,
+      bossConfig.shotBodyHeight / projectile.scaleY,
     );
+    this.centerProjectileBody(projectile, textureKey, bossConfig);
     projectile.setVelocityX(direction * bossConfig.projectileSpeed);
     projectile.setData('spawnX', projectile.x);
     projectile.setData('range', bossConfig.projectileRange);
     projectile.setData('damage', bossConfig.damage);
+  }
+
+  centerProjectileBody(projectile, textureKey, bossConfig) {
+    const bounds = this.getTextureContentBounds(textureKey);
+    const bodyWidth = bossConfig.shotBodyWidth / projectile.scaleX;
+    const bodyHeight = bossConfig.shotBodyHeight / projectile.scaleY;
+
+    projectile.body.setOffset(
+      bounds.x + (bounds.width - bodyWidth) / 2,
+      bounds.y + (bounds.height - bodyHeight) / 2,
+    );
   }
 
   updateProjectiles() {
