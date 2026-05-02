@@ -243,6 +243,15 @@ export const LEVELS = [
       { x: 2950, y: 440, label: 'Checkpoint 2' },
     ],
     goal: { x: 4000, y: 430, width: 56, height: 90 },
+    boss: {
+      shotOffsetX: 68,
+      shotOffsetY: -74,
+      shotScale: 0.62,
+      shotBodyWidth: 42,
+      shotBodyHeight: 24,
+      defeatedScaleMultiplier: 0.72,
+      defeatedFootSink: 20,
+    },
   },
   {
     id: 4,

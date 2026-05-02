@@ -18,7 +18,7 @@ const SHEET_COLUMNS = 4;
 const SHEET_ROWS = 2;
 const BOSS_FRAME_GUTTER = 10;
 const BOSS_FRAME_PADDING = 8;
-const BOSS_2_ATTACK_FRAME_OVERFLOW = 80;
+const WIDE_ATTACK_FRAME_OVERFLOW = 80;
 const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
@@ -449,8 +449,10 @@ export class BootScene extends Phaser.Scene {
 
   getBossSheetFrameRect(image, column, row, sourceKey) {
     const frameRect = this.getSheetFrameRect(image, column, row);
-    const gutter = sourceKey === 'boss-2-attack-source' ? 0 : BOSS_FRAME_GUTTER;
-    const overflow = sourceKey === 'boss-2-attack-source' ? BOSS_2_ATTACK_FRAME_OVERFLOW : 0;
+    const useWideAttackFrame = sourceKey === 'boss-2-attack-source' ||
+      sourceKey === 'boss-3-attack-source';
+    const gutter = useWideAttackFrame ? 0 : BOSS_FRAME_GUTTER;
+    const overflow = useWideAttackFrame ? WIDE_ATTACK_FRAME_OVERFLOW : 0;
     const x = Math.max(0, frameRect.x + gutter - overflow);
     const y = frameRect.y + gutter;
     const right = Math.min(image.width, frameRect.x + frameRect.width - gutter + overflow);
