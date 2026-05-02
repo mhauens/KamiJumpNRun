@@ -312,6 +312,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.body.setAllowGravity(false);
     this.boss.body.setImmovable(true);
     this.configureBossBody();
+    this.boss.on(Phaser.Animations.Events.ANIMATION_UPDATE, () => this.alignBossToFloor());
 
     this.projectiles = this.physics.add.group({
       allowGravity: false,
@@ -528,7 +529,6 @@ export class LevelScene extends Phaser.Scene {
       .container(x, y)
       .setScrollFactor(0)
       .setDepth(152)
-      .setVisible(false)
       .setSize(width, height)
       .setInteractive(
         new Phaser.Geom.Rectangle(0, 0, width, height),
@@ -556,7 +556,7 @@ export class LevelScene extends Phaser.Scene {
 
     const icon = this.add
       .text(labelText === 'Retry' ? -88 : -116, -1, iconText, {
-        fontFamily: 'Verdana, sans-serif',
+        fontFamily: 'Arial, Verdana, sans-serif',
         fontSize: '46px',
         fontStyle: 'bold',
         color: '#ffffff',
@@ -567,7 +567,7 @@ export class LevelScene extends Phaser.Scene {
 
     const label = this.add
       .text(labelText === 'Retry' ? 36 : 38, -1, labelText, {
-        fontFamily: 'Verdana, sans-serif',
+        fontFamily: 'Arial, Verdana, sans-serif',
         fontSize: labelFontSize,
         fontStyle: 'bold',
         color: '#ffffff',
@@ -577,6 +577,7 @@ export class LevelScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     button.add([shadow, frame, face, icon, label]);
+    button.setVisible(false);
     button.on('pointerover', () => button.setScale(1.04));
     button.on('pointerout', () => button.setScale(1));
     button.on('pointerdown', () => button.setScale(0.98));
@@ -884,6 +885,14 @@ export class LevelScene extends Phaser.Scene {
       BOSS_FOOT_SINK;
   }
 
+  alignBossToFloor() {
+    if (!this.boss || this.bossDefeated) {
+      return;
+    }
+
+    this.boss.setY(this.getBossVisualY(this.boss.texture.key));
+  }
+
   getBossDefeatedScale(defeatedKey) {
     const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
     const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
@@ -1129,6 +1138,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.boss.setFlipX(this.player.x < this.boss.x);
     this.boss.play(`boss-${this.level.id}-move`, true);
+    this.alignBossToFloor();
   }
 
   recoverBossIfFallen() {
@@ -1179,6 +1189,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.setVelocityX(0);
     this.boss.setFlipX(this.player.x < this.boss.x);
     this.boss.play(`boss-${this.level.id}-attack`, true);
+    this.alignBossToFloor();
     this.nextBossAttackAt = this.time.now + this.level.boss.attackCooldown;
 
     this.time.delayedCall(320, () => {
@@ -1328,6 +1339,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.setVelocityX(0);
     this.player.setVelocityY(BOSS_HIT_BOUNCE);
     this.boss.play(`boss-${this.level.id}-hit`, true);
+    this.alignBossToFloor();
     this.refreshHealthBars();
 
     if (this.bossHp <= 0) {
