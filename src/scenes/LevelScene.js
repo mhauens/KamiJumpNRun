@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
+import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
+import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
 import { LEVELS } from '../data/levels.js';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
+import { MusicControls } from '../ui/MusicControls.js';
 import { loadHighScore, saveHighScore } from '../utils/storage.js';
 
 const PLAYER_SCALE = 0.11;
@@ -40,6 +43,10 @@ const PLAYER_ARENA_FOOT_SINK = 30;
 const BOSS_COUNTDOWN_SECONDS = 3;
 const CAMERA_EXIT_PAN_MS = 700;
 const BOSS_BASE_HP = 5;
+const LEVEL_MUSIC_KEY = 'kamis-world-level';
+const LEVEL_MUSIC_VOLUME = 0.05;
+const LEVEL_MUSIC_PANEL_WIDTH = 282;
+const LEVEL_MUSIC_PANEL_MARGIN = 34;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -80,6 +87,10 @@ export class LevelScene extends Phaser.Scene {
   }
 
   create() {
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.stopBossSplashSound();
+    });
+
     this.createWorld();
     this.createPlatforms();
     this.createPlayer();
@@ -89,9 +100,24 @@ export class LevelScene extends Phaser.Scene {
     this.createBoss();
     this.createHud();
     this.createBossRetryUi();
+    this.createLevelMusicControls();
     this.configureCollisions();
     this.configureCamera();
     this.showToast(`Level ${this.level.id}: ${this.level.name}`);
+  }
+
+  createLevelMusicControls() {
+    this.musicControls = new MusicControls(this, {
+      audioKey: LEVEL_MUSIC_KEY,
+      audioUrls: [levelMusicOggUrl, levelMusicMp3Url],
+      x: GAME_WIDTH - LEVEL_MUSIC_PANEL_WIDTH - LEVEL_MUSIC_PANEL_MARGIN,
+      y: LEVEL_MUSIC_PANEL_MARGIN,
+      initialVolume: LEVEL_MUSIC_VOLUME,
+      align: 'right',
+      depth: 180,
+      persistBetweenScenes: true,
+    });
+    this.musicControls.start();
   }
 
   ensureBossAnimations() {
@@ -591,14 +617,18 @@ export class LevelScene extends Phaser.Scene {
     this.retrySplash.setVisible(true);
     this.restartLevelButton.setVisible(true);
     this.retryButton.setVisible(true);
+    this.updateLevelMusicPause();
+    this.playBossSplashSound('retry');
   }
 
   hideBossRetryUi() {
+    this.stopBossSplashSound();
     this.retrySplash?.setVisible(false);
     this.restartLevelButton?.setVisible(false);
     this.restartLevelButton?.setScale(1);
     this.retryButton?.setVisible(false);
     this.retryButton?.setScale(1);
+    this.updateLevelMusicPause();
   }
 
   configureCollisions() {
@@ -654,6 +684,8 @@ export class LevelScene extends Phaser.Scene {
   }
 
   update() {
+    this.updateLevelMusicPause();
+
     if (this.levelComplete) {
       this.player.setVelocityX(0);
       return;
@@ -675,6 +707,10 @@ export class LevelScene extends Phaser.Scene {
     if (this.player.y > this.level.worldHeight + FALL_LIMIT_PADDING) {
       this.respawnPlayer(false);
     }
+  }
+
+  updateLevelMusicPause() {
+    this.musicControls?.setAutoPaused(Boolean(this.bossSplash) || this.awaitingBossRetry);
   }
 
   updateBossTrigger() {
@@ -1047,6 +1083,55 @@ export class LevelScene extends Phaser.Scene {
     image.setScale(scale);
   }
 
+  getBossSplashAudioConfig(kind) {
+    if (kind === 'retry') {
+      return this.level.boss.audio?.retrySplash;
+    }
+
+    return this.level.boss.audio?.splash;
+  }
+
+  playBossSplashSound(kind) {
+    const config = this.getBossSplashAudioConfig(kind);
+
+    if (!config?.key || !this.cache.audio.exists(config.key) || this.sound.locked) {
+      return;
+    }
+
+    this.stopBossSplashSound();
+
+    const sound = this.sound.add(config.key, {
+      volume: config.volume ?? 1,
+    });
+
+    sound.once(Phaser.Sound.Events.COMPLETE, () => {
+      if (this.activeBossSplashSound?.sound === sound) {
+        this.activeBossSplashSound = null;
+      }
+
+      sound.destroy();
+    });
+
+    sound.play();
+    this.activeBossSplashSound = { key: config.key, sound };
+  }
+
+  stopBossSplashSound() {
+    const activeSound = this.activeBossSplashSound?.sound;
+
+    this.activeBossSplashSound = null;
+
+    if (!activeSound) {
+      return;
+    }
+
+    if (activeSound.isPlaying || activeSound.isPaused) {
+      activeSound.stop();
+    }
+
+    activeSound.destroy();
+  }
+
   showBossSplash() {
     this.hideBossSplash();
     this.bossSplash = this.add
@@ -1055,6 +1140,8 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(140);
 
     this.fitImageToScreen(this.bossSplash);
+    this.updateLevelMusicPause();
+    this.playBossSplashSound('splash');
   }
 
   panCameraToBossArena() {
@@ -1123,8 +1210,10 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    this.stopBossSplashSound();
     this.bossSplash.destroy();
     this.bossSplash = null;
+    this.updateLevelMusicPause();
   }
 
   updateBoss() {
@@ -1619,6 +1708,7 @@ export class LevelScene extends Phaser.Scene {
         return;
       }
 
+      MusicControls.stopSharedAudio(LEVEL_MUSIC_KEY);
       this.scene.start('EndScene', {
         score: this.score,
         highScore: this.highScore,

@@ -11,6 +11,7 @@ import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_backgr
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
+import { LEVELS } from '../data/levels.js';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 230;
@@ -82,6 +83,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('level-template', levelTemplateUrl);
     this.load.image('start-screen', startScreenUrl);
     this.loadBossAssets();
+    this.loadBossAudio();
 
     this.createLoadingLabel();
   }
@@ -105,6 +107,18 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`boss-${asset.id}-defeated`, asset.defeated);
       this.load.image(`boss-${asset.id}-shot`, asset.shot);
       this.load.image(`player-hit-boss-${asset.id}-source`, asset.playerHit);
+    });
+  }
+
+  loadBossAudio() {
+    LEVELS.forEach((level) => {
+      [level.boss?.audio?.splash, level.boss?.audio?.retrySplash].forEach((config) => {
+        if (!config?.key || !Array.isArray(config.urls) || config.urls.length === 0) {
+          return;
+        }
+
+        this.load.audio(config.key, config.urls);
+      });
     });
   }
 

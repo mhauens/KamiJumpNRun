@@ -20,6 +20,23 @@ const BOSS_ARENA_WIDTH = 1280;
 const BOSS_ARENA_EXIT_PADDING = 140;
 const BOSS_ARENA_GROUND_HEIGHT = 260;
 
+function createBossAudioConfig(levelId, overrides = {}) {
+  return {
+    splash: {
+      key: `boss-${levelId}-splash-audio`,
+      urls: [],
+      volume: 1,
+      ...(overrides.splash ?? {}),
+    },
+    retrySplash: {
+      key: `boss-${levelId}-retry-splash-audio`,
+      urls: [],
+      volume: 1,
+      ...(overrides.retrySplash ?? {}),
+    },
+  };
+}
+
 function withBossDefaults(level) {
   const lastPickupX = Math.max(
     ...level.coins.map((entry) => entry.x),
@@ -49,6 +66,7 @@ function withBossDefaults(level) {
   const boss = {
     ...BOSS_DEFAULTS,
     ...(level.boss ?? {}),
+    audio: createBossAudioConfig(level.id, level.boss?.audio),
     triggerX: arenaLeft - 40,
     arenaLeft,
     arenaRight,
@@ -250,6 +268,7 @@ export const LEVELS = [
     goal: { x: 4000, y: 430, width: 56, height: 90 },
     boss: {
       name: 'Der Schröder',
+      scaleMultiplier: 1.2,
       shotOffsetX: 68,
       shotOffsetY: -74,
       shotScale: 0.62,
