@@ -138,6 +138,8 @@ export const LEVELS = [
     goal: { x: 2650, y: 470, width: 56, height: 90 },
     boss: {
       name: 'Elfa',
+      shotOffsetY: -76,
+      shotScale: 0.24,
     },
   },
   {
@@ -197,6 +199,7 @@ export const LEVELS = [
     goal: { x: 3270, y: 510, width: 56, height: 90 },
     boss: {
       name: 'Annamaria',
+      scaleMultiplier: 1.2,
       shotOffsetX: 68,
       shotOffsetY: -88,
       shotScale: 0.55,

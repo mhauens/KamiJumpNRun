@@ -28,6 +28,7 @@ const ATTACK_ANIMATION_FRAME_RATE = 6;
 const BOSS_LEVEL_COUNT = 6;
 const assetUrls = import.meta.glob([
   '../../assets/**/*.webp',
+  '../../assets/**/*.png',
   '!../../assets/**/old/**',
   '!../../assets/**/OLD/**',
 ], {
@@ -48,6 +49,11 @@ function resolveBossAsset(levelId, filePattern) {
   return resolveAssetUrl(levelId, fileName) ?? resolveAssetUrl(1, fallbackFileName);
 }
 
+function resolveOptionalBossAsset(levelId, fileBaseName) {
+  return resolveAssetUrl(levelId, `${fileBaseName}.png`) ??
+    resolveAssetUrl(levelId, `${fileBaseName}.webp`);
+}
+
 const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
   const id = index + 1;
 
@@ -61,6 +67,7 @@ const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
     attack: resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.webp`),
     defeated: resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
     shot: resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
+    puddle: resolveOptionalBossAsset(id, `boss_${id}_puddle`),
     playerHit: resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
   };
 });
@@ -108,6 +115,9 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`boss-${asset.id}-attack-source`, asset.attack);
       this.load.image(`boss-${asset.id}-defeated`, asset.defeated);
       this.load.image(`boss-${asset.id}-shot`, asset.shot);
+      if (asset.puddle) {
+        this.load.image(`boss-${asset.id}-puddle`, asset.puddle);
+      }
       this.load.image(`player-hit-boss-${asset.id}-source`, asset.playerHit);
     });
   }

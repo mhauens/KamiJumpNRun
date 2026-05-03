@@ -59,6 +59,7 @@ const PLAYER_CRIT_CHANCE = 0.12;
 const BOSS_CRIT_BASE_CHANCE = 0.16;
 const BOSS_CRIT_CHANCE_PER_LEVEL = 0.015;
 const BOSS_CRIT_MAX_CHANCE = 0.28;
+const BOSS_CRIT_REDUCTION_PER_BALL = 0.02;
 const CRIT_DAMAGE_MIN = 3;
 const CRIT_DAMAGE_MAX = 6;
 const CRIT_HIT_DISPLAY_WIDTH = 320;
@@ -67,6 +68,29 @@ const LEVEL_MUSIC_KEY = 'kamis-world-level';
 const LEVEL_MUSIC_VOLUME = 0.05;
 const LEVEL_MUSIC_PANEL_WIDTH = 282;
 const LEVEL_MUSIC_PANEL_MARGIN = 34;
+const PAINT_PUDDLE_LEVEL_IDS = new Set([1, 2]);
+const PAINT_PUDDLE_DISPLAY_WIDTH = 420;
+const PAINT_PUDDLE_BODY_WIDTH = 170;
+const PAINT_PUDDLE_BODY_HEIGHT = 26;
+const PAINT_PUDDLE_SURFACE_OFFSET = 4;
+const PAINT_PUDDLE_BOSS_TUNING = {
+  2: {
+    displayWidth: 280,
+    surfaceOffset: 19,
+  },
+};
+const PAINT_PUDDLE_LIFETIME_MS = 5200;
+const PAINT_PUDDLE_TRIGGERED_LIFETIME_MS = 2400;
+const PAINT_PUDDLE_SLOW_MS = 1800;
+const PAINT_PUDDLE_SLOW_MULTIPLIER = 0.45;
+const PAINT_PUDDLE_SPAWN_DELAY_MS = 520;
+const PAINT_PUDDLE_MIN_DISTANCE = 120;
+const PAINT_PUDDLE_SPAWN_CHANCE = 0.18;
+const PAINT_PUDDLE_SPAWN_REDUCTION_PER_BALL = 0.02;
+const PAINT_PUDDLE_SPAWN_COOLDOWN_MS = 5000;
+const PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD = 128;
+const PAINT_PUDDLE_STEP_TOLERANCE = 18;
+const PAINT_PUDDLE_STEP_HORIZONTAL_INSET = 10;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -95,6 +119,7 @@ export class LevelScene extends Phaser.Scene {
     this.playerBossContactDamageArmed = true;
     this.bossIsHit = false;
     this.levelCoinHpBonus = 0;
+    this.levelBallsCollected = 0;
     this.playerMaxHp = BOSS_BASE_HP;
     this.bossMaxHp = BOSS_BASE_HP + this.level.coins.length;
     this.playerHp = this.playerMaxHp;
@@ -104,6 +129,9 @@ export class LevelScene extends Phaser.Scene {
     this.bossScale = 1;
     this.bossBottomPaddingByTexture = new Map();
     this.bossBodyBounds = null;
+    this.playerSlowUntil = 0;
+    this.playerJumpBlockedUntil = 0;
+    this.nextPaintPuddleSpawnAt = 0;
   }
 
   create() {
@@ -278,11 +306,11 @@ export class LevelScene extends Phaser.Scene {
       immovable: true,
     });
 
-    this.createPickupSet(this.level.coins, 'coin', 1, 1, COIN_PLAYER_HP_BONUS);
-    this.createPickupSet(this.level.balls, 'ball', 10, 1.08, 0);
+    this.createPickupSet(this.level.coins, 'coin', 1, 1, COIN_PLAYER_HP_BONUS, 'coin');
+    this.createPickupSet(this.level.balls, 'ball', 10, 1.08, 0, 'ball');
   }
 
-  createPickupSet(entries, texture, value, scale, bossHpBonus) {
+  createPickupSet(entries, texture, value, scale, bossHpBonus, pickupType) {
     entries.forEach((entry) => {
       const pickup = this.collectibles
         .create(entry.x, entry.y, texture)
@@ -293,6 +321,7 @@ export class LevelScene extends Phaser.Scene {
       pickup.body.setImmovable(true);
       pickup.setData('value', value);
       pickup.setData('bossHpBonus', bossHpBonus);
+      pickup.setData('pickupType', pickupType);
       pickup.setData('baseY', entry.y);
 
       this.tweens.add({
@@ -364,6 +393,8 @@ export class LevelScene extends Phaser.Scene {
       allowGravity: false,
       immovable: true,
     });
+
+    this.paintPuddles = this.physics.add.staticGroup();
   }
 
   createHud() {
@@ -788,6 +819,13 @@ export class LevelScene extends Phaser.Scene {
       null,
       this,
     );
+    this.physics.add.overlap(
+      this.player,
+      this.paintPuddles,
+      this.handlePaintPuddleOverlap,
+      null,
+      this,
+    );
   }
 
   configureCamera() {
@@ -891,17 +929,21 @@ export class LevelScene extends Phaser.Scene {
 
     const groundedNow =
       body.blocked.down || body.touching.down || body.wasTouching.down;
-    const canJump = groundedNow || this.time.now - this.lastGroundedAt <= GROUNDED_GRACE_MS;
+    const jumpBlocked = this.isPlayerJumpBlocked();
+    const canJump = !jumpBlocked &&
+      (groundedNow || this.time.now - this.lastGroundedAt <= GROUNDED_GRACE_MS);
     let jumpedThisFrame = false;
 
     const movingLeft = this.keys.left.isDown || this.keys.leftArrow.isDown;
     const movingRight = this.keys.right.isDown || this.keys.rightArrow.isDown;
 
+    const playerSpeed = this.getPlayerSpeed();
+
     if (movingLeft) {
-      this.player.setVelocityX(-PLAYER_SPEED);
+      this.player.setVelocityX(-playerSpeed);
       this.player.setFlipX(true);
     } else if (movingRight) {
-      this.player.setVelocityX(PLAYER_SPEED);
+      this.player.setVelocityX(playerSpeed);
       this.player.setFlipX(false);
     } else {
       this.player.setVelocityX(0);
@@ -927,6 +969,16 @@ export class LevelScene extends Phaser.Scene {
     const nextState = isAirborneVisual ? 'jump' : movingOnGround ? 'walk' : 'stand';
 
     this.setPlayerVisualState(nextState);
+  }
+
+  getPlayerSpeed() {
+    return this.time.now < this.playerSlowUntil
+      ? PLAYER_SPEED * PAINT_PUDDLE_SLOW_MULTIPLIER
+      : PLAYER_SPEED;
+  }
+
+  isPlayerJumpBlocked() {
+    return this.time.now < this.playerJumpBlockedUntil;
   }
 
   setPlayerVisualState(nextState) {
@@ -994,6 +1046,7 @@ export class LevelScene extends Phaser.Scene {
     this.awaitingBossRetry = false;
     this.bossState = 'patrol';
     this.playerBossContactDamageArmed = true;
+    this.clearPaintPuddles();
     this.playerMaxHp = this.getPlayerBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
@@ -1135,6 +1188,51 @@ export class LevelScene extends Phaser.Scene {
         height: canvas.height,
         bottomPadding: 0,
       };
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+      bottomPadding: canvas.height - maxY - 1,
+    };
+  }
+
+  getTextureAlphaBounds(textureKey, alphaThreshold) {
+    const sourceImage = this.textures.get(textureKey).getSourceImage();
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceImage.width;
+    canvas.height = sourceImage.height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(sourceImage, 0, 0);
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let minX = canvas.width;
+    let minY = canvas.height;
+    let maxX = 0;
+    let maxY = 0;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const alpha = pixels[index + 3];
+
+      if (alpha < alphaThreshold) {
+        continue;
+      }
+
+      const pixelIndex = index / 4;
+      const x = pixelIndex % canvas.width;
+      const y = Math.floor(pixelIndex / canvas.width);
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+
+    if (minX > maxX || minY > maxY) {
+      return this.getTextureContentBounds(textureKey);
     }
 
     return {
@@ -1465,6 +1563,8 @@ export class LevelScene extends Phaser.Scene {
     projectile.setData('spawnX', projectile.x);
     projectile.setData('range', bossConfig.projectileRange);
     projectile.setData('damage', bossConfig.damage);
+
+    this.scheduleBossPaintPuddle();
   }
 
   centerProjectileBody(projectile, textureKey, bossConfig) {
@@ -1492,9 +1592,209 @@ export class LevelScene extends Phaser.Scene {
       const range = projectile.getData('range');
 
       if (Math.abs(projectile.x - spawnX) >= range) {
+        this.spawnPaintPuddleFromProjectile(projectile);
         projectile.destroy();
       }
     });
+  }
+
+  shouldUseBossPaintPuddles() {
+    return PAINT_PUDDLE_LEVEL_IDS.has(this.level.id) &&
+      this.textures.exists(this.getPaintPuddleTextureKey());
+  }
+
+  getPaintPuddleTextureKey() {
+    return `boss-${this.level.id}-puddle`;
+  }
+
+  getPaintPuddleTuning() {
+    return {
+      displayWidth: PAINT_PUDDLE_DISPLAY_WIDTH,
+      surfaceOffset: PAINT_PUDDLE_SURFACE_OFFSET,
+      ...(PAINT_PUDDLE_BOSS_TUNING[this.level.id] ?? {}),
+    };
+  }
+
+  scheduleBossPaintPuddle() {
+    if (
+      !this.shouldUseBossPaintPuddles() ||
+      this.hasActivePaintPuddle() ||
+      this.isPaintPuddleSpawnOnCooldown() ||
+      Math.random() > this.getPaintPuddleSpawnChance()
+    ) {
+      return;
+    }
+
+    const targetX = Phaser.Math.Clamp(
+      this.player.x,
+      this.level.boss.arenaLeft + PAINT_PUDDLE_MIN_DISTANCE,
+      this.level.boss.arenaRight - PAINT_PUDDLE_MIN_DISTANCE,
+    );
+
+    this.time.delayedCall(PAINT_PUDDLE_SPAWN_DELAY_MS, () => {
+      if (
+        !this.bossFightActive ||
+        this.bossDefeated ||
+        this.hasActivePaintPuddle() ||
+        this.isPaintPuddleSpawnOnCooldown()
+      ) {
+        return;
+      }
+
+      this.spawnPaintPuddle(targetX, this.level.boss.floorY);
+    });
+  }
+
+  spawnPaintPuddleFromProjectile(projectile) {
+    if (
+      !this.shouldUseBossPaintPuddles() ||
+      !this.bossFightActive ||
+      !projectile?.active ||
+      this.hasActivePaintPuddle() ||
+      this.isPaintPuddleSpawnOnCooldown() ||
+      Math.random() > this.getPaintPuddleSpawnChance()
+    ) {
+      return;
+    }
+
+    const platformTop = this.getPlatformTopAt(projectile.x);
+    if (platformTop === null) {
+      return;
+    }
+
+    this.spawnPaintPuddle(projectile.x, platformTop);
+  }
+
+  getPlatformTopAt(x) {
+    const matchingPlatforms = this.level.platforms
+      .filter((platform) => x >= platform.x && x <= platform.x + platform.width);
+
+    if (matchingPlatforms.length === 0) {
+      return null;
+    }
+
+    return matchingPlatforms
+      .map((platform) => platform.y)
+      .sort((a, b) => Math.abs(a - this.level.boss.floorY) - Math.abs(b - this.level.boss.floorY))[0];
+  }
+
+  spawnPaintPuddle(x, platformTop) {
+    if (
+      !this.shouldUseBossPaintPuddles() ||
+      this.hasActivePaintPuddle() ||
+      this.isPaintPuddleSpawnOnCooldown()
+    ) {
+      return;
+    }
+
+    this.nextPaintPuddleSpawnAt = this.time.now + PAINT_PUDDLE_SPAWN_COOLDOWN_MS;
+
+    const textureKey = this.getPaintPuddleTextureKey();
+    const tuning = this.getPaintPuddleTuning();
+    const texture = this.textures.get(textureKey);
+    const source = texture.getSourceImage();
+    const bounds = this.getTextureAlphaBounds(
+      textureKey,
+      PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD,
+    );
+    const scale = tuning.displayWidth / source.width;
+    const displayHeight = source.height * scale;
+    const contentCenterX = bounds.x + bounds.width / 2;
+    const imageX = x + (source.width / 2 - contentCenterX) * scale;
+    const imageY = platformTop - tuning.surfaceOffset + (source.height / 2 - bounds.y) * scale;
+    const puddle = this.paintPuddles
+      .create(imageX, imageY, textureKey)
+      .setOrigin(0.5)
+      .setDisplaySize(tuning.displayWidth, displayHeight)
+      .setDepth(6);
+
+    const bodyWidth = PAINT_PUDDLE_BODY_WIDTH / scale;
+    const bodyHeight = PAINT_PUDDLE_BODY_HEIGHT / scale;
+    puddle.body.setSize(bodyWidth, bodyHeight);
+    puddle.body.setOffset(
+      bounds.x + (bounds.width - bodyWidth) / 2,
+      bounds.y + Math.max(0, bounds.height * 0.24),
+    );
+    puddle.refreshBody();
+
+    this.tweens.add({
+      targets: puddle,
+      alpha: 0,
+      duration: 260,
+      delay: PAINT_PUDDLE_LIFETIME_MS,
+      onComplete: () => puddle.destroy(),
+    });
+  }
+
+  hasActivePaintPuddle() {
+    if (!this.paintPuddles) {
+      return false;
+    }
+
+    return this.paintPuddles.children.entries.some((puddle) => puddle.active);
+  }
+
+  isPaintPuddleSpawnOnCooldown() {
+    return this.time.now < this.nextPaintPuddleSpawnAt;
+  }
+
+  getPaintPuddleSpawnChance() {
+    return Phaser.Math.Clamp(
+      PAINT_PUDDLE_SPAWN_CHANCE - this.levelBallsCollected * PAINT_PUDDLE_SPAWN_REDUCTION_PER_BALL,
+      0,
+      PAINT_PUDDLE_SPAWN_CHANCE,
+    );
+  }
+
+  handlePaintPuddleOverlap(player, puddle) {
+    if (
+      !this.bossFightActive ||
+      !puddle.active ||
+      puddle.getData('triggered') ||
+      !this.isPlayerSteppingOnPaintPuddle(player, puddle)
+    ) {
+      return;
+    }
+
+    this.playerSlowUntil = Math.max(
+      this.playerSlowUntil,
+      this.time.now + PAINT_PUDDLE_SLOW_MS,
+    );
+    this.playerJumpBlockedUntil = Math.max(
+      this.playerJumpBlockedUntil,
+      this.time.now + PAINT_PUDDLE_SLOW_MS,
+    );
+    this.tweens.killTweensOf(puddle);
+    puddle.setData('triggered', true);
+    puddle.body.enable = false;
+    puddle.setAlpha(1);
+    this.tweens.add({
+      targets: puddle,
+      alpha: 0,
+      duration: 320,
+      delay: PAINT_PUDDLE_TRIGGERED_LIFETIME_MS,
+      onComplete: () => puddle.destroy(),
+    });
+  }
+
+  isPlayerSteppingOnPaintPuddle(player, puddle) {
+    if (!player.body || !puddle.body) {
+      return false;
+    }
+
+    const playerBottom = player.body.bottom;
+    const playerFootX = player.body.center.x;
+    const puddleTop = puddle.body.top;
+    const grounded = player.body.blocked.down || player.body.touching.down || player.body.wasTouching.down;
+    const withinPuddleHorizontally =
+      playerFootX >= puddle.body.left + PAINT_PUDDLE_STEP_HORIZONTAL_INSET &&
+      playerFootX <= puddle.body.right - PAINT_PUDDLE_STEP_HORIZONTAL_INSET;
+
+    return grounded &&
+      withinPuddleHorizontally &&
+      player.body.velocity.y >= -20 &&
+      playerBottom >= puddleTop - PAINT_PUDDLE_STEP_TOLERANCE &&
+      playerBottom <= puddleTop + puddle.body.height + PAINT_PUDDLE_STEP_TOLERANCE;
   }
 
   rearmBossContactDamage() {
@@ -1639,9 +1939,11 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getBossCritChance() {
+    const ballCritReduction = this.levelBallsCollected * BOSS_CRIT_REDUCTION_PER_BALL;
+
     return Phaser.Math.Clamp(
-      BOSS_CRIT_BASE_CHANCE + (this.level.id - 1) * BOSS_CRIT_CHANCE_PER_LEVEL,
-      BOSS_CRIT_BASE_CHANCE,
+      BOSS_CRIT_BASE_CHANCE + (this.level.id - 1) * BOSS_CRIT_CHANCE_PER_LEVEL - ballCritReduction,
+      0,
       BOSS_CRIT_MAX_CHANCE,
     );
   }
@@ -1713,6 +2015,7 @@ export class LevelScene extends Phaser.Scene {
     this.hideBossSplash();
     this.removeArenaWall();
     this.clearProjectiles();
+    this.clearPaintPuddles();
     this.goal.enableBody(false, this.goal.x, this.goal.y, true, true);
     this.goal.refreshBody();
     this.setArenaCamera();
@@ -1740,6 +2043,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
     this.configureBossBody();
     this.clearProjectiles();
+    this.clearPaintPuddles();
     this.hideBossSplash();
     this.setHealthBarsVisible(false);
     this.placePlayerAtBossStart();
@@ -1779,7 +2083,18 @@ export class LevelScene extends Phaser.Scene {
   }
 
   destroyProjectile(projectile) {
+    this.spawnPaintPuddleFromProjectile(projectile);
     projectile.destroy();
+  }
+
+  clearPaintPuddles() {
+    this.playerSlowUntil = 0;
+    this.playerJumpBlockedUntil = 0;
+    this.nextPaintPuddleSpawnAt = 0;
+    this.paintPuddles?.children.each((puddle) => {
+      this.tweens.killTweensOf(puddle);
+      puddle.destroy();
+    });
   }
 
   setHealthBarsVisible(visible) {
@@ -1799,11 +2114,17 @@ export class LevelScene extends Phaser.Scene {
 
     const value = pickup.getData('value') ?? 0;
     const playerHpBonus = pickup.getData('bossHpBonus') ?? 0;
+    const pickupType = pickup.getData('pickupType');
     this.score += value;
     this.levelCoinHpBonus = Math.min(
       this.level.coins.length * COIN_PLAYER_HP_BONUS,
       this.levelCoinHpBonus + playerHpBonus,
     );
+
+    if (pickupType === 'ball') {
+      this.levelBallsCollected += 1;
+    }
+
     pickup.disableBody(true, true);
 
     this.showToast(value >= 10 ? '+10 Bonus Ball' : '+1 Coin');
@@ -1910,6 +2231,8 @@ export class LevelScene extends Phaser.Scene {
 
     this.player.body.reset(this.respawnPoint.x, this.respawnPoint.y);
     this.playerBossContactDamageArmed = true;
+    this.playerSlowUntil = 0;
+    this.playerJumpBlockedUntil = 0;
     this.player.setVelocity(0, 0);
     this.player.clearTint();
     this.playerState = 'stand';
