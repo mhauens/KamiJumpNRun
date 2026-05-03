@@ -10,6 +10,7 @@ const BOSS_DEFAULTS = {
   shotScale: 0.18,
   shotBodyWidth: 34,
   shotBodyHeight: 18,
+  scaleMultiplier: 1,
   defeatedScaleMultiplier: 2.75,
   defeatedFootSink: 108,
   damage: 1,
@@ -116,6 +117,9 @@ export const LEVELS = [
       { x: 2100, y: 560, label: 'Checkpoint 2' },
     ],
     goal: { x: 2650, y: 470, width: 56, height: 90 },
+    boss: {
+      name: 'Elfa',
+    },
   },
   {
     id: 2,
@@ -171,6 +175,7 @@ export const LEVELS = [
     ],
     goal: { x: 3270, y: 510, width: 56, height: 90 },
     boss: {
+      name: 'Annamaria',
       shotOffsetX: 68,
       shotOffsetY: -88,
       shotScale: 0.55,
@@ -244,12 +249,16 @@ export const LEVELS = [
     ],
     goal: { x: 4000, y: 430, width: 56, height: 90 },
     boss: {
+      name: 'Der Schröder',
       shotOffsetX: 68,
       shotOffsetY: -74,
       shotScale: 0.62,
       shotBodyWidth: 42,
       shotBodyHeight: 24,
       defeatedScaleMultiplier: 0.72,
+      defeatedScaleMatchesStand: true,
+      defeatedStandScaleMultiplier: 1.15,
+      defeatedScaleXMultiplier: 1.15,
       defeatedFootSink: 20,
     },
   },
@@ -318,6 +327,17 @@ export const LEVELS = [
       { x: 3000, y: 450, label: 'Checkpoint 2' },
     ],
     goal: { x: 4250, y: 560, width: 56, height: 90 },
+    boss: {
+      name: 'Horstinator',
+      scaleMultiplier: 1.38,
+      shotOffsetX: 68,
+      shotOffsetY: -82,
+      shotScale: 0.58,
+      shotBodyWidth: 42,
+      shotBodyHeight: 24,
+      defeatedScaleMultiplier: 0.72,
+      defeatedFootSink: 20,
+    },
   },
   {
     id: 5,
@@ -387,6 +407,9 @@ export const LEVELS = [
       { x: 3320, y: 590, label: 'Checkpoint 2' },
     ],
     goal: { x: 4560, y: 530, width: 56, height: 90 },
+    boss: {
+      name: 'Foxy',
+    },
   },
   {
     id: 6,
@@ -465,5 +488,8 @@ export const LEVELS = [
       { x: 4650, y: 370, label: 'Checkpoint 3' },
     ],
     goal: { x: 5080, y: 530, width: 56, height: 90 },
+    boss: {
+      name: 'Zukunftstechnologe',
+    },
   },
 ].map(withBossDefaults);

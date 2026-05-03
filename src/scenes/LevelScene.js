@@ -430,7 +430,7 @@ export class LevelScene extends Phaser.Scene {
       .setVisible(false);
 
     this.bossHealthLabel = this.add
-      .text(GAME_WIDTH / 2 + 28, 26, `Boss ${this.level.id}`, {
+      .text(GAME_WIDTH / 2 + 28, 26, this.level.boss.name ?? `Boss ${this.level.id}`, {
         fontFamily: 'Verdana, sans-serif',
         fontSize: '16px',
         color: '#ffffff',
@@ -896,6 +896,16 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getBossDefeatedScale(defeatedKey) {
+    if (this.level.boss.defeatedScaleMatchesStand) {
+      const standKey = `boss-${this.level.id}-stand`;
+      const standVisibleHeight = this.getTextureContentBounds(standKey).height;
+      const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
+      const scaleMultiplier = this.level.boss.defeatedStandScaleMultiplier ?? 1;
+
+      return ((standVisibleHeight * this.bossScale) / defeatedVisibleHeight) *
+        scaleMultiplier;
+    }
+
     const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
     const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
 
@@ -912,7 +922,9 @@ export class LevelScene extends Phaser.Scene {
     const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
     const bossVisibleHeight = this.getTextureContentBounds(standKey).height;
 
-    return (playerVisibleHeight / bossVisibleHeight) * BOSS_SCALE_MULTIPLIER;
+    return (playerVisibleHeight / bossVisibleHeight) *
+      BOSS_SCALE_MULTIPLIER *
+      this.level.boss.scaleMultiplier;
   }
 
   getTextureBottomPadding(textureKey) {
@@ -1412,7 +1424,10 @@ export class LevelScene extends Phaser.Scene {
     const defeatedKey = `boss-${this.level.id}-defeated`;
     const defeatedScale = this.getBossDefeatedScale(defeatedKey);
     this.boss.setTexture(defeatedKey);
-    this.boss.setScale(defeatedScale);
+    this.boss.setScale(
+      defeatedScale * (this.level.boss.defeatedScaleXMultiplier ?? 1),
+      defeatedScale,
+    );
     this.boss.setY(this.getBossDefeatedY(defeatedKey, defeatedScale));
     this.setHealthBarsVisible(false);
     this.hideBossSplash();

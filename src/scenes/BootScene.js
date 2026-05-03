@@ -19,6 +19,7 @@ const SHEET_ROWS = 2;
 const BOSS_FRAME_GUTTER = 10;
 const BOSS_FRAME_PADDING = 8;
 const WIDE_ATTACK_FRAME_OVERFLOW = 80;
+const BOSS_4_HIT_FRAME_OVERFLOW = 24;
 const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
@@ -330,7 +331,10 @@ export class BootScene extends Phaser.Scene {
   createBossFrameLayout(bossId, sourceKeys) {
     const targetImage = this.textures.get(`boss-${bossId}-stand`).getSourceImage();
     const targetBounds = this.getVisibleBounds(targetImage);
-    const frameBounds = sourceKeys.flatMap((sourceKey) => this.getBossSheetFrameBounds(sourceKey));
+    const frameBoundsBySource = Object.fromEntries(
+      sourceKeys.map((sourceKey) => [sourceKey, this.getBossSheetFrameBounds(sourceKey)]),
+    );
+    const frameBounds = Object.values(frameBoundsBySource).flat();
     const maxDrawWidth = Math.max(
       targetBounds.width,
       ...frameBounds.map((bounds) => bounds.width * (targetBounds.height / bounds.height)),
@@ -347,6 +351,7 @@ export class BootScene extends Phaser.Scene {
       centerX,
       baselineY,
       targetHeight: targetBounds.height,
+      frameBoundsBySource,
     };
   }
 
@@ -424,7 +429,7 @@ export class BootScene extends Phaser.Scene {
 
         const context = canvas.getContext('2d');
         context.imageSmoothingEnabled = false;
-        const scale = layout.targetHeight / sourceBounds.height;
+        const scale = this.getBossFrameScale(sourceKey, sourceBounds, layout);
         const drawWidth = sourceBounds.width * scale;
         const drawHeight = sourceBounds.height * scale;
         const drawX = layout.centerX - drawWidth / 2;
@@ -450,13 +455,23 @@ export class BootScene extends Phaser.Scene {
   getBossSheetFrameRect(image, column, row, sourceKey) {
     const frameRect = this.getSheetFrameRect(image, column, row);
     const useWideAttackFrame = sourceKey === 'boss-2-attack-source' ||
-      sourceKey === 'boss-3-attack-source';
+      sourceKey === 'boss-3-attack-source' ||
+      sourceKey === 'boss-4-attack-source';
     const gutter = useWideAttackFrame ? 0 : BOSS_FRAME_GUTTER;
-    const overflow = useWideAttackFrame ? WIDE_ATTACK_FRAME_OVERFLOW : 0;
-    const x = Math.max(0, frameRect.x + gutter - overflow);
+    const horizontalGutter = sourceKey === 'boss-4-move-source' ||
+      sourceKey === 'boss-4-hit-source'
+      ? 0
+      : gutter;
+    const bottomGutter = sourceKey === 'boss-4-move-source' ? 0 : gutter;
+    const overflow = useWideAttackFrame
+      ? WIDE_ATTACK_FRAME_OVERFLOW
+      : sourceKey === 'boss-4-hit-source'
+        ? BOSS_4_HIT_FRAME_OVERFLOW
+        : 0;
+    const x = Math.max(0, frameRect.x + horizontalGutter - overflow);
     const y = frameRect.y + gutter;
-    const right = Math.min(image.width, frameRect.x + frameRect.width - gutter + overflow);
-    const bottom = frameRect.y + frameRect.height - gutter;
+    const right = Math.min(image.width, frameRect.x + frameRect.width - horizontalGutter + overflow);
+    const bottom = frameRect.y + frameRect.height - bottomGutter;
 
     return {
       x,
@@ -464,6 +479,20 @@ export class BootScene extends Phaser.Scene {
       width: Math.max(1, right - x),
       height: Math.max(1, bottom - y),
     };
+  }
+
+  getBossFrameScale(sourceKey, sourceBounds, layout) {
+    if (sourceKey === 'boss-4-attack-source') {
+      const attackFrameBounds = layout.frameBoundsBySource[sourceKey] ?? [];
+      const attackReferenceHeight = Math.max(
+        sourceBounds.height,
+        ...attackFrameBounds.map((bounds) => bounds.height),
+      );
+
+      return layout.targetHeight / attackReferenceHeight;
+    }
+
+    return layout.targetHeight / sourceBounds.height;
   }
 
   getVisibleBounds(image) {
