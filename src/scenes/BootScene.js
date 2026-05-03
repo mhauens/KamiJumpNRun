@@ -8,6 +8,7 @@ import skyRouteBackgroundUrl from '../../assets/backgrounds/sky_route_background
 import cloudGardenBackgroundUrl from '../../assets/backgrounds/cloud_garden_background.webp';
 import championRidgeBackgroundUrl from '../../assets/backgrounds/champion_ridge_background.webp';
 import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_background.webp';
+import critHitUrl from '../../assets/shared/crit_hit.webp';
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
@@ -82,6 +83,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('ground-platform-source', groundPlatformUrl);
     this.load.image('level-template', levelTemplateUrl);
     this.load.image('start-screen', startScreenUrl);
+    this.load.image('crit-hit', critHitUrl);
     this.loadBossAssets();
     this.loadBossAudio();
 

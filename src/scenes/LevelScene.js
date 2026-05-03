@@ -39,10 +39,30 @@ const PLAYER_HIT_LOCK_MS = 1000;
 const BOSS_HIT_LOCK_MS = 1000;
 const HEALTH_BAR_WIDTH = 220;
 const HEALTH_BAR_HEIGHT = 18;
+const HEALTH_BAR_SEGMENTS = 8;
+const HEALTH_BAR_SEGMENT_GAP = 4;
+const HEALTH_BAR_SEGMENT_WIDTH = Math.floor(
+  (HEALTH_BAR_WIDTH - (HEALTH_BAR_SEGMENTS - 1) * HEALTH_BAR_SEGMENT_GAP) /
+    HEALTH_BAR_SEGMENTS,
+);
+const HEALTH_BAR_HEART_PIXEL_SIZE = 6;
+const HEALTH_BAR_HEART_WIDTH = HEALTH_BAR_HEART_PIXEL_SIZE * 5;
+const HEALTH_BAR_SEGMENT_X = HEALTH_BAR_HEART_WIDTH + 18;
+const HEALTH_BAR_BAR_Y = 34;
+const HEALTH_BAR_VALUE_Y = 60;
 const PLAYER_ARENA_FOOT_SINK = 30;
 const BOSS_COUNTDOWN_SECONDS = 3;
 const CAMERA_EXIT_PAN_MS = 700;
 const BOSS_BASE_HP = 5;
+const COIN_PLAYER_HP_BONUS = 0.5;
+const PLAYER_CRIT_CHANCE = 0.12;
+const BOSS_CRIT_BASE_CHANCE = 0.16;
+const BOSS_CRIT_CHANCE_PER_LEVEL = 0.015;
+const BOSS_CRIT_MAX_CHANCE = 0.28;
+const CRIT_DAMAGE_MIN = 3;
+const CRIT_DAMAGE_MAX = 6;
+const CRIT_HIT_DISPLAY_WIDTH = 320;
+const CRIT_HIT_Y = 112;
 const LEVEL_MUSIC_KEY = 'kamis-world-level';
 const LEVEL_MUSIC_VOLUME = 0.05;
 const LEVEL_MUSIC_PANEL_WIDTH = 282;
@@ -258,7 +278,7 @@ export class LevelScene extends Phaser.Scene {
       immovable: true,
     });
 
-    this.createPickupSet(this.level.coins, 'coin', 1, 1, 1);
+    this.createPickupSet(this.level.coins, 'coin', 1, 1, COIN_PLAYER_HP_BONUS);
     this.createPickupSet(this.level.balls, 'ball', 10, 1.08, 0);
   }
 
@@ -408,89 +428,187 @@ export class LevelScene extends Phaser.Scene {
       .setAlpha(0);
 
     this.refreshHud();
+    this.updateLevelHudVisibility();
+  }
+
+  setLevelHudVisible(visible) {
+    [
+      this.hudPanel,
+      this.levelText,
+      this.scoreText,
+      this.bestText,
+      this.helpText,
+    ].forEach((entry) => entry?.setVisible(visible));
+  }
+
+  updateLevelHudVisibility() {
+    const visible = !(
+      this.bossIntroActive ||
+      this.bossCountdownActive ||
+      this.bossFightActive ||
+      this.awaitingBossRetry
+    );
+
+    this.setLevelHudVisible(visible);
   }
 
   createHealthBars() {
-    this.playerHealthLabel = this.add
-      .text(GAME_WIDTH / 2 - HEALTH_BAR_WIDTH - 28, 26, 'Kami', {
-        fontFamily: 'Verdana, sans-serif',
-        fontSize: '16px',
-        color: '#ffffff',
-      })
-      .setScrollFactor(0)
-      .setDepth(111)
-      .setVisible(false);
+    this.playerHealthBar = this.createSegmentedHealthBar({
+      x: GAME_WIDTH / 2 - HEALTH_BAR_SEGMENT_X - HEALTH_BAR_WIDTH - 92,
+      y: 20,
+      label: 'Kami',
+      heartColor: 0xd91f27,
+      heartShadowColor: 0x5e0a0f,
+      fillColor: 0xff3b30,
+      fillHighlightColor: 0xff8a80,
+      emptyColor: 0x26384b,
+      emptyHighlightColor: 0x4f6477,
+      valueStroke: '#000000',
+    });
 
-    this.playerHealthBack = this.add
-      .rectangle(GAME_WIDTH / 2 - 28, 58, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, 0x3d1820, 0.88)
-      .setOrigin(1, 0.5)
+    this.bossHealthBar = this.createSegmentedHealthBar({
+      x: GAME_WIDTH / 2 + 40,
+      y: 20,
+      label: this.level.boss.name ?? `Boss ${this.level.id}`,
+      heartColor: 0x8ddf18,
+      heartShadowColor: 0x3e6705,
+      fillColor: 0x8ef01d,
+      fillHighlightColor: 0xd6ff86,
+      emptyColor: 0x26384b,
+      emptyHighlightColor: 0x4f6477,
+      valueStroke: '#000000',
+    });
+  }
+
+  createSegmentedHealthBar({
+    x,
+    y,
+    label,
+    heartColor,
+    heartShadowColor,
+    fillColor,
+    fillHighlightColor,
+    emptyColor,
+    emptyHighlightColor,
+    valueStroke,
+  }) {
+    const container = this.add.container(x, y)
       .setScrollFactor(0)
       .setDepth(110)
       .setVisible(false);
 
-    this.playerHealthFill = this.add
-      .rectangle(
-        GAME_WIDTH / 2 - 28 - HEALTH_BAR_WIDTH,
-        58,
-        HEALTH_BAR_WIDTH,
-        HEALTH_BAR_HEIGHT,
-        0xff5f6d,
-        1,
-      )
-      .setOrigin(0, 0.5)
-      .setScrollFactor(0)
-      .setDepth(111)
-      .setVisible(false);
-
-    this.playerHealthValue = this.add
-      .text(GAME_WIDTH / 2 - 28 - HEALTH_BAR_WIDTH / 2, 58, '', {
+    const labelText = this.add
+      .text(0, 0, label, {
         fontFamily: 'Verdana, sans-serif',
-        fontSize: '13px',
+        fontSize: '20px',
+        fontStyle: 'bold',
         color: '#ffffff',
-        stroke: '#41111a',
-        strokeThickness: 4,
+        stroke: '#000000',
+        strokeThickness: 6,
       })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(112)
-      .setVisible(false);
+      .setOrigin(0, 0)
+      .setScrollFactor(0);
 
-    this.bossHealthLabel = this.add
-      .text(GAME_WIDTH / 2 + 28, 26, this.level.boss.name ?? `Boss ${this.level.id}`, {
+    const heart = this.add.graphics().setScrollFactor(0);
+    const segments = this.add.graphics().setScrollFactor(0);
+    const valueText = this.add
+      .text(HEALTH_BAR_SEGMENT_X + HEALTH_BAR_WIDTH / 2, HEALTH_BAR_VALUE_Y, '', {
         fontFamily: 'Verdana, sans-serif',
-        fontSize: '16px',
+        fontSize: '20px',
+        fontStyle: 'bold',
         color: '#ffffff',
+        stroke: valueStroke,
+        strokeThickness: 6,
       })
-      .setScrollFactor(0)
-      .setDepth(111)
-      .setVisible(false);
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0);
 
-    this.bossHealthBack = this.add
-      .rectangle(GAME_WIDTH / 2 + 28, 58, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, 0x1f2f40, 0.88)
-      .setOrigin(0, 0.5)
-      .setScrollFactor(0)
-      .setDepth(110)
-      .setVisible(false);
+    this.drawPixelHeart(heart, 0, HEALTH_BAR_BAR_Y - 8, heartColor, heartShadowColor);
+    container.add([labelText, heart, segments, valueText]);
 
-    this.bossHealthFill = this.add
-      .rectangle(GAME_WIDTH / 2 + 28, 58, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT, 0x6be27b, 1)
-      .setOrigin(0, 0.5)
-      .setScrollFactor(0)
-      .setDepth(111)
-      .setVisible(false);
+    return {
+      container,
+      labelText,
+      heart,
+      segments,
+      valueText,
+      fillColor,
+      fillHighlightColor,
+      emptyColor,
+      emptyHighlightColor,
+    };
+  }
 
-    this.bossHealthValue = this.add
-      .text(GAME_WIDTH / 2 + 28 + HEALTH_BAR_WIDTH / 2, 58, '', {
-        fontFamily: 'Verdana, sans-serif',
-        fontSize: '13px',
-        color: '#ffffff',
-        stroke: '#10243a',
-        strokeThickness: 4,
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(112)
-      .setVisible(false);
+  drawPixelHeart(graphics, x, y, fillColor, shadowColor) {
+    const pattern = [
+      [0, 1, 1, 0, 1, 1, 0],
+      [1, 1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [0, 1, 1, 1, 1, 1, 0],
+      [0, 0, 1, 1, 1, 0, 0],
+      [0, 0, 0, 1, 0, 0, 0],
+    ];
+    const pixel = HEALTH_BAR_HEART_PIXEL_SIZE;
+
+    graphics.clear();
+
+    pattern.forEach((row, rowIndex) => {
+      row.forEach((cell, columnIndex) => {
+        if (!cell) {
+          return;
+        }
+
+        graphics.fillStyle(shadowColor, 1);
+        graphics.fillRect(
+          x + columnIndex * pixel + 2,
+          y + rowIndex * pixel + 2,
+          pixel,
+          pixel,
+        );
+
+        graphics.fillStyle(fillColor, 1);
+        graphics.fillRect(
+          x + columnIndex * pixel,
+          y + rowIndex * pixel,
+          pixel,
+          pixel,
+        );
+      });
+    });
+  }
+
+  renderSegmentedHealthBar(bar, currentHp, maxHp) {
+    const progress = maxHp > 0 ? (currentHp / maxHp) * HEALTH_BAR_SEGMENTS : 0;
+
+    bar.segments.clear();
+
+    for (let index = 0; index < HEALTH_BAR_SEGMENTS; index += 1) {
+      const x = HEALTH_BAR_SEGMENT_X + index * (HEALTH_BAR_SEGMENT_WIDTH + HEALTH_BAR_SEGMENT_GAP);
+      const fillProgress = Phaser.Math.Clamp(progress - index, 0, 1);
+      const innerWidth = HEALTH_BAR_SEGMENT_WIDTH - 4;
+      const filledWidth = Math.round(innerWidth * fillProgress);
+
+      bar.segments.fillStyle(0x081018, 1);
+      bar.segments.fillRect(x, HEALTH_BAR_BAR_Y, HEALTH_BAR_SEGMENT_WIDTH, HEALTH_BAR_HEIGHT);
+
+      bar.segments.fillStyle(bar.emptyColor, 1);
+      bar.segments.fillRect(x + 2, HEALTH_BAR_BAR_Y + 2, innerWidth, HEALTH_BAR_HEIGHT - 4);
+
+      bar.segments.fillStyle(bar.emptyHighlightColor, 0.85);
+      bar.segments.fillRect(x + 2, HEALTH_BAR_BAR_Y + 2, innerWidth, 4);
+
+      if (filledWidth <= 0) {
+        continue;
+      }
+
+      bar.segments.fillStyle(bar.fillColor, 1);
+      bar.segments.fillRect(x + 2, HEALTH_BAR_BAR_Y + 2, filledWidth, HEALTH_BAR_HEIGHT - 4);
+
+      bar.segments.fillStyle(bar.fillHighlightColor, 0.85);
+      bar.segments.fillRect(x + 2, HEALTH_BAR_BAR_Y + 2, filledWidth, 4);
+    }
+
+    bar.valueText.setText(`${currentHp}/${maxHp}`);
   }
 
   createBossRetryUi() {
@@ -685,6 +803,7 @@ export class LevelScene extends Phaser.Scene {
 
   update() {
     this.updateLevelMusicPause();
+    this.updateLevelHudVisibility();
 
     if (this.levelComplete) {
       this.player.setVelocityX(0);
@@ -1449,7 +1568,8 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    this.bossHp = Math.max(0, this.bossHp - 1);
+    const hit = this.resolveHitDamage(1, PLAYER_CRIT_CHANCE);
+    this.bossHp = Math.max(0, this.bossHp - hit.damage);
     this.bossIsHit = true;
     this.bossState = 'hit';
     this.boss.setVelocityX(0);
@@ -1457,6 +1577,10 @@ export class LevelScene extends Phaser.Scene {
     this.boss.play(`boss-${this.level.id}-hit`, true);
     this.alignBossToFloor();
     this.refreshHealthBars();
+
+    if (hit.isCrit) {
+      this.showCritHit();
+    }
 
     if (this.bossHp <= 0) {
       this.time.delayedCall(260, () => this.defeatBoss());
@@ -1476,13 +1600,18 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    this.playerHp = Math.max(0, this.playerHp - damage);
+    const hit = this.resolveHitDamage(damage, this.getBossCritChance());
+    this.playerHp = Math.max(0, this.playerHp - hit.damage);
     this.playerIsHit = true;
     this.player.setVelocityX(0);
     this.player.stop();
     this.player.play(`player-hit-boss-${this.level.id}`, true);
     this.refreshHealthBars();
     this.cameras.main.shake(130, 0.003);
+
+    if (hit.isCrit) {
+      this.showCritHit();
+    }
 
     if (this.playerHp <= 0) {
       this.time.delayedCall(PLAYER_HIT_LOCK_MS, () => this.loseBossFight());
@@ -1493,6 +1622,68 @@ export class LevelScene extends Phaser.Scene {
       this.playerIsHit = false;
       this.playerState = '';
       this.configurePlayerBody();
+    });
+  }
+
+  resolveHitDamage(baseDamage, critChance) {
+    const isCrit = Math.random() < critChance;
+
+    if (!isCrit) {
+      return { damage: baseDamage, isCrit };
+    }
+
+    return {
+      damage: Phaser.Math.Between(CRIT_DAMAGE_MIN, CRIT_DAMAGE_MAX),
+      isCrit,
+    };
+  }
+
+  getBossCritChance() {
+    return Phaser.Math.Clamp(
+      BOSS_CRIT_BASE_CHANCE + (this.level.id - 1) * BOSS_CRIT_CHANCE_PER_LEVEL,
+      BOSS_CRIT_BASE_CHANCE,
+      BOSS_CRIT_MAX_CHANCE,
+    );
+  }
+
+  showCritHit() {
+    this.critHitImage?.destroy();
+
+    const sourceImage = this.textures.get('crit-hit').getSourceImage();
+    this.critHitImage = this.add
+      .image(GAME_WIDTH / 2, CRIT_HIT_Y, 'crit-hit')
+      .setScrollFactor(0)
+      .setDepth(149)
+      .setAlpha(0)
+      .setDisplaySize(
+        CRIT_HIT_DISPLAY_WIDTH,
+        CRIT_HIT_DISPLAY_WIDTH * (sourceImage.height / sourceImage.width),
+      );
+    const critHitImage = this.critHitImage;
+
+    this.tweens.add({
+      targets: critHitImage,
+      alpha: 1,
+      scaleX: critHitImage.scaleX * 1.08,
+      scaleY: critHitImage.scaleY * 1.08,
+      duration: 120,
+      ease: 'Back.out',
+      yoyo: true,
+      hold: 340,
+      onComplete: () => {
+        this.tweens.add({
+          targets: critHitImage,
+          alpha: 0,
+          duration: 180,
+          onComplete: () => {
+            critHitImage.destroy();
+
+            if (this.critHitImage === critHitImage) {
+              this.critHitImage = null;
+            }
+          },
+        });
+      },
     });
   }
 
@@ -1592,28 +1783,13 @@ export class LevelScene extends Phaser.Scene {
   }
 
   setHealthBarsVisible(visible) {
-    [
-      this.playerHealthLabel,
-      this.playerHealthBack,
-      this.playerHealthFill,
-      this.playerHealthValue,
-      this.bossHealthLabel,
-      this.bossHealthBack,
-      this.bossHealthFill,
-      this.bossHealthValue,
-    ].forEach((entry) => entry.setVisible(visible));
+    [this.playerHealthBar?.container, this.bossHealthBar?.container]
+      .forEach((entry) => entry?.setVisible(visible));
   }
 
   refreshHealthBars() {
-    const playerRatio = this.playerMaxHp > 0 ? this.playerHp / this.playerMaxHp : 0;
-    const bossRatio = this.bossMaxHp > 0 ? this.bossHp / this.bossMaxHp : 0;
-
-    this.playerHealthFill.width =
-      HEALTH_BAR_WIDTH * playerRatio;
-    this.bossHealthFill.width =
-      HEALTH_BAR_WIDTH * bossRatio;
-    this.playerHealthValue.setText(`${this.playerHp}/${this.playerMaxHp}`);
-    this.bossHealthValue.setText(`${this.bossHp}/${this.bossMaxHp}`);
+    this.renderSegmentedHealthBar(this.playerHealthBar, this.playerHp, this.playerMaxHp);
+    this.renderSegmentedHealthBar(this.bossHealthBar, this.bossHp, this.bossMaxHp);
   }
 
   collectPickup(player, pickup) {
@@ -1622,11 +1798,11 @@ export class LevelScene extends Phaser.Scene {
     }
 
     const value = pickup.getData('value') ?? 0;
-    const bossHpBonus = pickup.getData('bossHpBonus') ?? 0;
+    const playerHpBonus = pickup.getData('bossHpBonus') ?? 0;
     this.score += value;
     this.levelCoinHpBonus = Math.min(
-      this.level.coins.length,
-      this.levelCoinHpBonus + bossHpBonus,
+      this.level.coins.length * COIN_PLAYER_HP_BONUS,
+      this.levelCoinHpBonus + playerHpBonus,
     );
     pickup.disableBody(true, true);
 
@@ -1635,10 +1811,13 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getPlayerBossMaxHp() {
+    const roundedBonus = Math.floor(this.levelCoinHpBonus);
+    const maxRoundedBonus = Math.floor(this.level.coins.length * COIN_PLAYER_HP_BONUS);
+
     return Phaser.Math.Clamp(
-      BOSS_BASE_HP + this.levelCoinHpBonus,
+      BOSS_BASE_HP + roundedBonus,
       BOSS_BASE_HP,
-      this.bossMaxHp,
+      BOSS_BASE_HP + maxRoundedBonus,
     );
   }
 
@@ -1650,7 +1829,7 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.score -= coinsLost;
-    this.levelCoinHpBonus = Math.max(0, this.levelCoinHpBonus - coinsLost);
+    this.levelCoinHpBonus = Math.max(0, this.levelCoinHpBonus - coinsLost * COIN_PLAYER_HP_BONUS);
     this.playerMaxHp = this.getPlayerBossMaxHp();
     this.playerHp = Math.min(this.playerHp, this.playerMaxHp);
     this.refreshHealthBars();
