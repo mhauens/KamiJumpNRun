@@ -1,16 +1,16 @@
 import Phaser from 'phaser';
-import mainCharStandUrl from '../../assets/mainChar/mainChar_stand.png';
-import mainCharJumpUrl from '../../assets/mainChar/mainChar_jump.png';
-import mainCharWalkUrl from '../../assets/mainChar/mainChar_walk.png';
-import backgroundUrl from '../../assets/backgrounds/background.png';
-import bridgeHillsBackgroundUrl from '../../assets/backgrounds/bridge_hills_background.png';
-import skyRouteBackgroundUrl from '../../assets/backgrounds/sky_route_background.png';
-import cloudGardenBackgroundUrl from '../../assets/backgrounds/cloud_garden_background.png';
-import championRidgeBackgroundUrl from '../../assets/backgrounds/champion_ridge_background.png';
-import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_background.png';
-import groundPlatformUrl from '../../assets/shared/ground_platform.png';
-import levelTemplateUrl from '../../assets/shared/level_template.png';
-import startScreenUrl from '../../assets/shared/start_screen.png';
+import mainCharStandUrl from '../../assets/mainChar/mainChar_stand.webp';
+import mainCharJumpUrl from '../../assets/mainChar/mainChar_jump.webp';
+import mainCharWalkUrl from '../../assets/mainChar/mainChar_walk.webp';
+import backgroundUrl from '../../assets/backgrounds/background.webp';
+import bridgeHillsBackgroundUrl from '../../assets/backgrounds/bridge_hills_background.webp';
+import skyRouteBackgroundUrl from '../../assets/backgrounds/sky_route_background.webp';
+import cloudGardenBackgroundUrl from '../../assets/backgrounds/cloud_garden_background.webp';
+import championRidgeBackgroundUrl from '../../assets/backgrounds/champion_ridge_background.webp';
+import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_background.webp';
+import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
+import levelTemplateUrl from '../../assets/shared/level_template.webp';
+import startScreenUrl from '../../assets/shared/start_screen.webp';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 230;
@@ -24,22 +24,26 @@ const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
 const BOSS_LEVEL_COUNT = 6;
-const assetUrls = import.meta.glob('../../assets/**/*.png', {
+const assetUrls = import.meta.glob([
+  '../../assets/**/*.webp',
+  '!../../assets/**/old/**',
+  '!../../assets/**/OLD/**',
+], {
   eager: true,
   import: 'default',
   query: '?url',
 });
 
+function resolveAssetUrl(levelId, fileName) {
+  return assetUrls[`../../assets/boss_${levelId}/${fileName}`] ??
+    assetUrls[`../../assets/${fileName}`];
+}
+
 function resolveBossAsset(levelId, filePattern) {
   const fileName = filePattern(levelId);
   const fallbackFileName = filePattern(1);
 
-  return (
-    assetUrls[`../../assets/boss_${levelId}/${fileName}`] ??
-    assetUrls[`../../assets/${fileName}`] ??
-    assetUrls[`../../assets/boss_1/${fallbackFileName}`] ??
-    assetUrls[`../../assets/${fallbackFileName}`]
-  );
+  return resolveAssetUrl(levelId, fileName) ?? resolveAssetUrl(1, fallbackFileName);
 }
 
 const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
@@ -47,15 +51,15 @@ const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
 
   return {
     id,
-    splashscreen: resolveBossAsset(id, (levelId) => `boss_${levelId}_splashscreen.png`),
-    retrySplashscreen: resolveBossAsset(id, (levelId) => `boss_${levelId}_retry_splashscreen.png`),
-    stand: resolveBossAsset(id, (levelId) => `boss_${levelId}_stand.png`),
-    move: resolveBossAsset(id, (levelId) => `boss_${levelId}_move.png`),
-    hit: resolveBossAsset(id, (levelId) => `boss_${levelId}_hit.png`),
-    attack: resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.png`),
-    defeated: resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.png`),
-    shot: resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.png`),
-    playerHit: resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.png`),
+    splashscreen: resolveBossAsset(id, (levelId) => `boss_${levelId}_splashscreen.webp`),
+    retrySplashscreen: resolveBossAsset(id, (levelId) => `boss_${levelId}_retry_splashscreen.webp`),
+    stand: resolveBossAsset(id, (levelId) => `boss_${levelId}_stand.webp`),
+    move: resolveBossAsset(id, (levelId) => `boss_${levelId}_move.webp`),
+    hit: resolveBossAsset(id, (levelId) => `boss_${levelId}_hit.webp`),
+    attack: resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.webp`),
+    defeated: resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
+    shot: resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
+    playerHit: resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
   };
 });
 
@@ -83,6 +87,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
+    this.configureSplashscreenTextures();
     this.createCharacterWalkTextures();
     this.createGeneratedTextures();
 
@@ -100,6 +105,18 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`boss-${asset.id}-defeated`, asset.defeated);
       this.load.image(`boss-${asset.id}-shot`, asset.shot);
       this.load.image(`player-hit-boss-${asset.id}-source`, asset.playerHit);
+    });
+  }
+
+  configureSplashscreenTextures() {
+    BOSS_ASSETS.forEach((asset) => {
+      this.textures
+        .get(`boss-${asset.id}-splashscreen`)
+        .setFilter(Phaser.Textures.FilterMode.LINEAR);
+
+      this.textures
+        .get(`boss-${asset.id}-retry-splashscreen`)
+        .setFilter(Phaser.Textures.FilterMode.LINEAR);
     });
   }
 
