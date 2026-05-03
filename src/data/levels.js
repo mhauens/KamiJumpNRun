@@ -205,8 +205,8 @@ export const LEVELS = [
       shotScale: 0.55,
       shotBodyWidth: 42,
       shotBodyHeight: 28,
-      defeatedScaleMultiplier: 0.72,
-      defeatedFootSink: 20,
+      defeatedScaleMultiplier: 0.95,
+      defeatedFootSink: 32,
     },
   },
   {
@@ -283,7 +283,7 @@ export const LEVELS = [
       shotScale: 0.62,
       shotBodyWidth: 42,
       shotBodyHeight: 24,
-      defeatedScaleMultiplier: 0.72,
+      defeatedScaleMultiplier: 1.05,
       defeatedScaleMatchesStand: true,
       defeatedStandScaleMultiplier: 0.64,
       defeatedFootSink: 20,
@@ -435,7 +435,7 @@ export const LEVELS = [
     balls: [
       { x: 760, y: 480 },
       { x: 1730, y: 460 },
-      { x: 3140, y: 520 },
+      { x: 3140, y: 400 },
       { x: 4100, y: 420 },
     ],
     checkpoints: [
@@ -445,6 +445,13 @@ export const LEVELS = [
     goal: { x: 4560, y: 530, width: 56, height: 90 },
     boss: {
       name: 'Foxy',
+      scaleMultiplier: 1.2,
+      speed: 220,
+      shotScale: 0.5,
+      shotBodyWidth: 42,
+      shotBodyHeight: 24,
+      defeatedScaleMultiplier: 0.85,
+      defeatedFootSink: 25,
     },
   },
   {

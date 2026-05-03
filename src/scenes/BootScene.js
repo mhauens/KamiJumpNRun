@@ -15,7 +15,7 @@ import startScreenUrl from '../../assets/shared/start_screen.webp';
 import { LEVELS } from '../data/levels.js';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
-const WALK_FRAME_VERTICAL_OFFSET = 230;
+const WALK_FRAME_VERTICAL_OFFSET = 210;
 const SHEET_COLUMNS = 4;
 const SHEET_ROWS = 2;
 const BOSS_FRAME_GUTTER = 10;
