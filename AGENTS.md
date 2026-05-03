@@ -68,6 +68,12 @@ Common per-boss overrides include:
 
 Boss animation frame generation is in `BootScene`. Some bosses need specific attack framing because their sprite frames extend past the nominal sheet cell. Keep such exceptions narrowly scoped to the affected boss/source key so existing bosses do not regress.
 
+## Level Pickup Placement
+
+Coins and balls in `src/data/levels.js` must be distributed intentionally across the level. They should not be too close together, should not overlap each other, and should remain reachable.
+
+For walkable ground blocks, do not place coins or balls below the actual grass/top surface of the platform they belong to. Pickups must sit above the surface, not inside the dirt/body area below the floor. Small floating platforms are exempt from this specific "below the ground surface" rule, but pickups on or near them should still be reachable and visually clear.
+
 ## iPad and Safari Notes
 
 iPad Safari and iPad Chrome are WebKit-based and can lose the WebGL context with large generated boss textures. `src/game/config.js` forces Phaser Canvas rendering on Apple touch devices. Do not remove that without testing on a real iPad.

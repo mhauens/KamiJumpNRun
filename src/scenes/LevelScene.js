@@ -68,6 +68,7 @@ const LEVEL_MUSIC_KEY = 'kamis-world-level';
 const LEVEL_MUSIC_VOLUME = 0.05;
 const LEVEL_MUSIC_PANEL_WIDTH = 282;
 const LEVEL_MUSIC_PANEL_MARGIN = 34;
+const BOSS_SPECIAL_ATTACK_REDUCTION_PER_BALL = 0.02;
 const PAINT_PUDDLE_LEVEL_IDS = new Set([1, 2]);
 const PAINT_PUDDLE_DISPLAY_WIDTH = 420;
 const PAINT_PUDDLE_BODY_WIDTH = 170;
@@ -86,11 +87,15 @@ const PAINT_PUDDLE_SLOW_MULTIPLIER = 0.45;
 const PAINT_PUDDLE_SPAWN_DELAY_MS = 520;
 const PAINT_PUDDLE_MIN_DISTANCE = 120;
 const PAINT_PUDDLE_SPAWN_CHANCE = 0.18;
-const PAINT_PUDDLE_SPAWN_REDUCTION_PER_BALL = 0.02;
 const PAINT_PUDDLE_SPAWN_COOLDOWN_MS = 5000;
 const PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD = 128;
 const PAINT_PUDDLE_STEP_TOLERANCE = 18;
 const PAINT_PUDDLE_STEP_HORIZONTAL_INSET = 10;
+const CARD_SPREAD_BOSS_ID = 3;
+const CARD_SPREAD_ATTACK_CHANCE = 0.28;
+const CARD_SPREAD_MIN_PROJECTILES = 3;
+const CARD_SPREAD_MAX_PROJECTILES = 5;
+const CARD_SPREAD_VERTICAL_SPEED_STEP = 70;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -1542,6 +1547,25 @@ export class LevelScene extends Phaser.Scene {
     const direction = this.player.x < this.boss.x ? -1 : 1;
     const bossConfig = this.level.boss;
     const textureKey = `boss-${this.level.id}-shot`;
+    const useCardSpread = this.shouldUseBossCardSpread() &&
+      Math.random() <= this.getBossSpecialAttackChance(CARD_SPREAD_ATTACK_CHANCE);
+
+    if (useCardSpread) {
+      this.fireBossCardSpread(direction, bossConfig, textureKey);
+      return;
+    }
+
+    this.createBossProjectile({
+      direction,
+      bossConfig,
+      textureKey,
+      velocityY: 0,
+    });
+
+    this.scheduleBossPaintPuddle();
+  }
+
+  createBossProjectile({ direction, bossConfig, textureKey, velocityY }) {
     const projectile = this.projectiles
       .create(
         this.boss.x + direction * bossConfig.shotOffsetX,
@@ -1559,12 +1583,36 @@ export class LevelScene extends Phaser.Scene {
       bossConfig.shotBodyHeight / projectile.scaleY,
     );
     this.centerProjectileBody(projectile, textureKey, bossConfig);
-    projectile.setVelocityX(direction * bossConfig.projectileSpeed);
+    projectile.setVelocity(direction * bossConfig.projectileSpeed, velocityY);
     projectile.setData('spawnX', projectile.x);
     projectile.setData('range', bossConfig.projectileRange);
     projectile.setData('damage', bossConfig.damage);
 
-    this.scheduleBossPaintPuddle();
+    return projectile;
+  }
+
+  shouldUseBossCardSpread() {
+    return this.level.id === CARD_SPREAD_BOSS_ID;
+  }
+
+  fireBossCardSpread(direction, bossConfig, textureKey) {
+    const cardCount = Phaser.Math.Between(
+      CARD_SPREAD_MIN_PROJECTILES,
+      CARD_SPREAD_MAX_PROJECTILES,
+    );
+    const centerIndex = (cardCount - 1) / 2;
+
+    for (let index = 0; index < cardCount; index += 1) {
+      const velocityY = (index - centerIndex) * CARD_SPREAD_VERTICAL_SPEED_STEP;
+      const projectile = this.createBossProjectile({
+        direction,
+        bossConfig,
+        textureKey,
+        velocityY,
+      });
+
+      projectile.setAngle(direction < 0 ? -velocityY * 0.12 : velocityY * 0.12);
+    }
   }
 
   centerProjectileBody(projectile, textureKey, bossConfig) {
@@ -1620,7 +1668,7 @@ export class LevelScene extends Phaser.Scene {
       !this.shouldUseBossPaintPuddles() ||
       this.hasActivePaintPuddle() ||
       this.isPaintPuddleSpawnOnCooldown() ||
-      Math.random() > this.getPaintPuddleSpawnChance()
+      Math.random() > this.getBossSpecialAttackChance(PAINT_PUDDLE_SPAWN_CHANCE)
     ) {
       return;
     }
@@ -1652,7 +1700,7 @@ export class LevelScene extends Phaser.Scene {
       !projectile?.active ||
       this.hasActivePaintPuddle() ||
       this.isPaintPuddleSpawnOnCooldown() ||
-      Math.random() > this.getPaintPuddleSpawnChance()
+      Math.random() > this.getBossSpecialAttackChance(PAINT_PUDDLE_SPAWN_CHANCE)
     ) {
       return;
     }
@@ -1738,11 +1786,11 @@ export class LevelScene extends Phaser.Scene {
     return this.time.now < this.nextPaintPuddleSpawnAt;
   }
 
-  getPaintPuddleSpawnChance() {
+  getBossSpecialAttackChance(baseChance) {
     return Phaser.Math.Clamp(
-      PAINT_PUDDLE_SPAWN_CHANCE - this.levelBallsCollected * PAINT_PUDDLE_SPAWN_REDUCTION_PER_BALL,
+      baseChance - this.levelBallsCollected * BOSS_SPECIAL_ATTACK_REDUCTION_PER_BALL,
       0,
-      PAINT_PUDDLE_SPAWN_CHANCE,
+      baseChance,
     );
   }
 
