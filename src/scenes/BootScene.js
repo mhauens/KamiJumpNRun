@@ -68,6 +68,8 @@ const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
     defeated: resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
     shot: resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
     puddle: resolveOptionalBossAsset(id, `boss_${id}_puddle`),
+    charge: resolveOptionalBossAsset(id, `boss_${id}_charge`) ??
+      resolveOptionalBossAsset(id, `mainChar_${id}_charge`),
     playerHit: resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
   };
 });
@@ -117,6 +119,9 @@ export class BootScene extends Phaser.Scene {
       this.load.image(`boss-${asset.id}-shot`, asset.shot);
       if (asset.puddle) {
         this.load.image(`boss-${asset.id}-puddle`, asset.puddle);
+      }
+      if (asset.charge) {
+        this.load.image(`boss-${asset.id}-charge-source`, asset.charge);
       }
       this.load.image(`player-hit-boss-${asset.id}-source`, asset.playerHit);
     });
@@ -296,15 +301,24 @@ export class BootScene extends Phaser.Scene {
       return;
     }
 
-    const bossLayout = this.createBossFrameLayout(asset.id, [
+    const sourceKeys = [
       `boss-${asset.id}-move-source`,
       `boss-${asset.id}-hit-source`,
       `boss-${asset.id}-attack-source`,
-    ]);
+    ];
+
+    if (asset.charge) {
+      sourceKeys.push(`boss-${asset.id}-charge-source`);
+    }
+
+    const bossLayout = this.createBossFrameLayout(asset.id, sourceKeys);
 
     this.createBossFrames(`boss-${asset.id}-move-source`, `boss-${asset.id}-move-frame`, bossLayout);
     this.createBossFrames(`boss-${asset.id}-hit-source`, `boss-${asset.id}-hit-frame`, bossLayout);
     this.createBossFrames(`boss-${asset.id}-attack-source`, `boss-${asset.id}-attack-frame`, bossLayout);
+    if (asset.charge) {
+      this.createBossFrames(`boss-${asset.id}-charge-source`, `boss-${asset.id}-charge-frame`, bossLayout);
+    }
     this.createPlayerHitFrames(
       `player-hit-boss-${asset.id}-source`,
       `player-hit-boss-${asset.id}-frame`,
@@ -323,6 +337,9 @@ export class BootScene extends Phaser.Scene {
       ATTACK_ANIMATION_FRAME_RATE,
       0,
     );
+    if (asset.charge) {
+      this.createAnimation(`boss-${asset.id}-charge`, `boss-${asset.id}-charge-frame`, 12, -1);
+    }
     this.createAnimation(
       `player-hit-boss-${asset.id}`,
       `player-hit-boss-${asset.id}-frame`,
@@ -423,7 +440,7 @@ export class BootScene extends Phaser.Scene {
           frameRect.height,
         );
 
-        this.clearEdgeWhiteBackground(sourceContext, frameRect.width, frameRect.height);
+        this.clearBossFrameBackground(sourceContext, frameRect.width, frameRect.height, sourceKey);
         const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas, true);
         bounds.push(sourceBounds);
       }
@@ -463,7 +480,7 @@ export class BootScene extends Phaser.Scene {
           frameRect.height,
         );
 
-        this.clearEdgeWhiteBackground(sourceContext, frameRect.width, frameRect.height);
+        this.clearBossFrameBackground(sourceContext, frameRect.width, frameRect.height, sourceKey);
         const sourceBounds = this.getSignificantVisibleBounds(sourceCanvas, true);
 
         const canvas = document.createElement('canvas');
@@ -501,11 +518,13 @@ export class BootScene extends Phaser.Scene {
       sourceKey === 'boss-3-attack-source' ||
       sourceKey === 'boss-4-attack-source';
     const gutter = useWideAttackFrame ? 0 : BOSS_FRAME_GUTTER;
-    const horizontalGutter = sourceKey === 'boss-4-move-source' ||
+    const isChargeFrame = sourceKey.endsWith('-charge-source');
+    const horizontalGutter = isChargeFrame ||
+      sourceKey === 'boss-4-move-source' ||
       sourceKey === 'boss-4-hit-source'
       ? 0
       : gutter;
-    const bottomGutter = sourceKey === 'boss-4-move-source' ? 0 : gutter;
+    const bottomGutter = sourceKey === 'boss-4-move-source' || isChargeFrame ? 0 : gutter;
     const overflow = useWideAttackFrame
       ? WIDE_ATTACK_FRAME_OVERFLOW
       : sourceKey === 'boss-4-hit-source'
@@ -525,14 +544,14 @@ export class BootScene extends Phaser.Scene {
   }
 
   getBossFrameScale(sourceKey, sourceBounds, layout) {
-    if (sourceKey === 'boss-4-attack-source') {
-      const attackFrameBounds = layout.frameBoundsBySource[sourceKey] ?? [];
-      const attackReferenceHeight = Math.max(
+    if (sourceKey === 'boss-4-attack-source' || sourceKey.endsWith('-charge-source')) {
+      const frameBounds = layout.frameBoundsBySource[sourceKey] ?? [];
+      const referenceHeight = Math.max(
         sourceBounds.height,
-        ...attackFrameBounds.map((bounds) => bounds.height),
+        ...frameBounds.map((bounds) => bounds.height),
       );
 
-      return layout.targetHeight / attackReferenceHeight;
+      return layout.targetHeight / referenceHeight;
     }
 
     return layout.targetHeight / sourceBounds.height;
@@ -804,6 +823,15 @@ export class BootScene extends Phaser.Scene {
     context.putImageData(frameData, 0, 0);
   }
 
+  clearBossFrameBackground(context, width, height, sourceKey) {
+    if (sourceKey.endsWith('-charge-source')) {
+      this.clearEdgeChromaBackground(context, width, height);
+      return;
+    }
+
+    this.clearEdgeWhiteBackground(context, width, height);
+  }
+
   clearEdgeWhiteBackground(context, width, height) {
     const frameData = context.getImageData(0, 0, width, height);
     const pixels = frameData.data;
@@ -860,6 +888,68 @@ export class BootScene extends Phaser.Scene {
       if (y < height - 1) {
         visit(pixelIndex + width);
       }
+    }
+
+    context.putImageData(frameData, 0, 0);
+  }
+
+  clearEdgeChromaBackground(context, width, height) {
+    const frameData = context.getImageData(0, 0, width, height);
+    const pixels = frameData.data;
+    const visited = new Uint8Array(width * height);
+    const stack = [];
+
+    const isBackgroundPixel = (pixelIndex) => {
+      const dataIndex = pixelIndex * 4;
+      const red = pixels[dataIndex];
+      const green = pixels[dataIndex + 1];
+      const blue = pixels[dataIndex + 2];
+      const alpha = pixels[dataIndex + 3];
+      const isWhite = red > 245 && green > 245 && blue > 245;
+      const isHotPink = red > 235 && green < 70 && blue > 95 && blue < 190;
+
+      return alpha > 0 && (isWhite || isHotPink);
+    };
+
+    const pushIfBackground = (pixelIndex) => {
+      if (
+        pixelIndex < 0 ||
+        pixelIndex >= visited.length ||
+        visited[pixelIndex] ||
+        !isBackgroundPixel(pixelIndex)
+      ) {
+        return;
+      }
+
+      visited[pixelIndex] = 1;
+      stack.push(pixelIndex);
+    };
+
+    for (let x = 0; x < width; x += 1) {
+      pushIfBackground(x);
+      pushIfBackground((height - 1) * width + x);
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      pushIfBackground(y * width);
+      pushIfBackground(y * width + width - 1);
+    }
+
+    while (stack.length > 0) {
+      const pixelIndex = stack.pop();
+      const dataIndex = pixelIndex * 4;
+      const x = pixelIndex % width;
+
+      pixels[dataIndex + 3] = 0;
+
+      if (x > 0) {
+        pushIfBackground(pixelIndex - 1);
+      }
+      if (x < width - 1) {
+        pushIfBackground(pixelIndex + 1);
+      }
+      pushIfBackground(pixelIndex - width);
+      pushIfBackground(pixelIndex + width);
     }
 
     context.putImageData(frameData, 0, 0);

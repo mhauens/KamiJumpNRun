@@ -96,6 +96,12 @@ const CARD_SPREAD_ATTACK_CHANCE = 0.28;
 const CARD_SPREAD_MIN_PROJECTILES = 3;
 const CARD_SPREAD_MAX_PROJECTILES = 5;
 const CARD_SPREAD_VERTICAL_SPEED_STEP = 70;
+const CHARGE_ATTACK_BOSS_ID = 5;
+const CHARGE_ATTACK_CHANCE = CARD_SPREAD_ATTACK_CHANCE;
+const CHARGE_ATTACK_SPEED = 760;
+const CHARGE_ATTACK_WINDUP_MS = 180;
+const CHARGE_ATTACK_MAX_MS = 1050;
+const CHARGE_ATTACK_MAX_DISTANCE = 680;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -137,6 +143,9 @@ export class LevelScene extends Phaser.Scene {
     this.playerSlowUntil = 0;
     this.playerJumpBlockedUntil = 0;
     this.nextPaintPuddleSpawnAt = 0;
+    this.bossChargeStartedAt = 0;
+    this.bossChargeStartX = 0;
+    this.bossChargeDirection = -1;
   }
 
   create() {
@@ -1445,6 +1454,11 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    if (this.bossState === 'charge') {
+      this.updateBossCharge();
+      return;
+    }
+
     if (this.bossState === 'attack') {
       this.boss.setVelocityX(0);
       return;
@@ -1519,7 +1533,12 @@ export class LevelScene extends Phaser.Scene {
   }
 
   startBossAttack() {
-    if (this.bossState === 'attack') {
+    if (this.bossState === 'attack' || this.bossState === 'charge') {
+      return;
+    }
+
+    if (this.shouldStartBossChargeAttack()) {
+      this.startBossChargeAttack();
       return;
     }
 
@@ -1541,6 +1560,74 @@ export class LevelScene extends Phaser.Scene {
         this.bossState = 'patrol';
       }
     });
+  }
+
+  shouldStartBossChargeAttack() {
+    return this.level.id === CHARGE_ATTACK_BOSS_ID &&
+      this.anims.exists(`boss-${this.level.id}-charge`) &&
+      Math.random() <= this.getBossSpecialAttackChance(CHARGE_ATTACK_CHANCE);
+  }
+
+  startBossChargeAttack() {
+    const direction = this.player.x < this.boss.x ? -1 : 1;
+
+    this.bossState = 'charge';
+    this.bossChargeStartedAt = this.time.now;
+    this.bossChargeStartX = this.boss.x;
+    this.bossChargeDirection = direction;
+    this.bossDirection = direction;
+    this.boss.setVelocityX(0);
+    this.boss.setFlipX(direction < 0);
+    this.boss.play(`boss-${this.level.id}-charge`, true);
+    this.alignBossToFloor();
+    this.nextBossAttackAt = this.time.now + this.level.boss.attackCooldown;
+
+    this.time.delayedCall(CHARGE_ATTACK_WINDUP_MS, () => {
+      if (
+        this.bossFightActive &&
+        !this.bossDefeated &&
+        !this.bossIsHit &&
+        this.bossState === 'charge'
+      ) {
+        this.boss.setVelocityX(this.bossChargeDirection * CHARGE_ATTACK_SPEED);
+      }
+    });
+  }
+
+  updateBossCharge() {
+    const bossConfig = this.level.boss;
+    const distanceCharged = Math.abs(this.boss.x - this.bossChargeStartX);
+    const hitLeftEdge = this.boss.x <= bossConfig.arenaLeft + 80;
+    const hitRightEdge = this.boss.x >= bossConfig.arenaRight - 80;
+    const timedOut = this.time.now - this.bossChargeStartedAt >= CHARGE_ATTACK_MAX_MS;
+    const reachedMaxDistance = distanceCharged >= CHARGE_ATTACK_MAX_DISTANCE;
+
+    this.boss.setFlipX(this.bossChargeDirection < 0);
+    this.alignBossToFloor();
+
+    if (hitLeftEdge) {
+      this.boss.setX(bossConfig.arenaLeft + 80);
+    } else if (hitRightEdge) {
+      this.boss.setX(bossConfig.arenaRight - 80);
+    }
+
+    if (hitLeftEdge || hitRightEdge || timedOut || reachedMaxDistance) {
+      this.endBossChargeAttack();
+    }
+  }
+
+  endBossChargeAttack() {
+    if (this.bossState !== 'charge') {
+      return;
+    }
+
+    this.boss.setVelocityX(0);
+
+    if (!this.bossDefeated && this.bossFightActive && !this.bossIsHit) {
+      this.bossState = 'patrol';
+      this.boss.play(`boss-${this.level.id}-move`, true);
+      this.alignBossToFloor();
+    }
   }
 
   fireBossProjectile() {
@@ -1899,6 +1986,10 @@ export class LevelScene extends Phaser.Scene {
 
     this.playerBossContactDamageArmed = false;
     this.damagePlayer(this.level.boss.damage);
+
+    if (this.bossState === 'charge') {
+      this.endBossChargeAttack();
+    }
   }
 
   handleProjectileHit(player, projectile) {
