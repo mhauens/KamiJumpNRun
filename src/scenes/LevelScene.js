@@ -50,6 +50,9 @@ const HEALTH_BAR_HEART_WIDTH = HEALTH_BAR_HEART_PIXEL_SIZE * 5;
 const HEALTH_BAR_SEGMENT_X = HEALTH_BAR_HEART_WIDTH + 18;
 const HEALTH_BAR_BAR_Y = 34;
 const HEALTH_BAR_VALUE_Y = 60;
+const BOSS_SHIELD_BAR_Y = HEALTH_BAR_BAR_Y + HEALTH_BAR_HEIGHT + 6;
+const BOSS_SHIELD_BAR_HEIGHT = 7;
+const BOSS_SHIELD_MAX_RATIO = 0.5;
 const PLAYER_ARENA_FOOT_SINK = 30;
 const BOSS_COUNTDOWN_SECONDS = 3;
 const CAMERA_EXIT_PAN_MS = 700;
@@ -102,6 +105,8 @@ const CHARGE_ATTACK_SPEED = 760;
 const CHARGE_ATTACK_WINDUP_MS = 180;
 const CHARGE_ATTACK_MAX_MS = 1050;
 const CHARGE_ATTACK_MAX_DISTANCE = 680;
+const PHASE_TWO_BOSS_ID = 6;
+const PHASE_TWO_SPECIAL_ATTACK_DAMAGE = 3;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -135,6 +140,9 @@ export class LevelScene extends Phaser.Scene {
     this.bossMaxHp = BOSS_BASE_HP + this.level.coins.length;
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
+    this.bossPhase = 1;
+    this.bossShieldMax = 0;
+    this.bossShieldHp = 0;
     this.nextBossAttackAt = 0;
     this.bossDirection = -1;
     this.bossScale = 1;
@@ -183,7 +191,35 @@ export class LevelScene extends Phaser.Scene {
   }
 
   ensureBossAnimations() {
-    this.scene.get('BootScene')?.createBossAnimations(this.level.id);
+    this.scene.get('BootScene')?.createBossAnimations(this.level.id, this.bossPhase);
+  }
+
+  getBossKey(kind) {
+    const phaseSuffix = this.bossPhase === 2 ? '-2' : '';
+
+    return `boss-${this.level.id}${phaseSuffix}-${kind}`;
+  }
+
+  getPlayerHitBossKey() {
+    const phaseSuffix = this.bossPhase === 2 ? '-2' : '';
+
+    return `player-hit-boss-${this.level.id}${phaseSuffix}`;
+  }
+
+  hasBossPhaseTwo() {
+    return this.level.id === PHASE_TWO_BOSS_ID && Boolean(this.level.boss.phase2);
+  }
+
+  getBossConfig() {
+    const phaseOverrides = this.bossPhase === 2 &&
+      typeof this.level.boss.phase2 === 'object'
+      ? this.level.boss.phase2
+      : {};
+
+    return {
+      ...this.level.boss,
+      ...phaseOverrides,
+    };
   }
 
   createWorld() {
@@ -387,8 +423,8 @@ export class LevelScene extends Phaser.Scene {
   }
 
   createBoss() {
-    const bossConfig = this.level.boss;
-    const standKey = `boss-${this.level.id}-stand`;
+    const bossConfig = this.getBossConfig();
+    const standKey = this.getBossKey('stand');
     this.bossScale = this.resolveBossScale(standKey);
 
     this.boss = this.physics.add
@@ -523,6 +559,10 @@ export class LevelScene extends Phaser.Scene {
       emptyHighlightColor: 0x4f6477,
       valueStroke: '#000000',
     });
+
+    this.bossHealthBar.shield = this.add.graphics().setScrollFactor(0).setVisible(false);
+    this.bossHealthBar.valueText.setY(HEALTH_BAR_VALUE_Y + 10);
+    this.bossHealthBar.container.add(this.bossHealthBar.shield);
   }
 
   createSegmentedHealthBar({
@@ -656,9 +696,51 @@ export class LevelScene extends Phaser.Scene {
     bar.valueText.setText(`${currentHp}/${maxHp}`);
   }
 
+  renderBossShieldBar() {
+    const shield = this.bossHealthBar?.shield;
+
+    if (!shield) {
+      return;
+    }
+
+    shield.clear();
+    shield.setVisible(this.bossPhase === 2 && this.bossShieldMax > 0);
+
+    if (!shield.visible) {
+      return;
+    }
+
+    const progress = Phaser.Math.Clamp(this.bossShieldHp / this.bossShieldMax, 0, 1);
+    const filledWidth = Math.round((HEALTH_BAR_WIDTH - 4) * progress);
+
+    shield.fillStyle(0x061323, 1);
+    shield.fillRect(HEALTH_BAR_SEGMENT_X, BOSS_SHIELD_BAR_Y, HEALTH_BAR_WIDTH, BOSS_SHIELD_BAR_HEIGHT);
+    shield.fillStyle(0x1f4f7a, 1);
+    shield.fillRect(
+      HEALTH_BAR_SEGMENT_X + 2,
+      BOSS_SHIELD_BAR_Y + 2,
+      HEALTH_BAR_WIDTH - 4,
+      BOSS_SHIELD_BAR_HEIGHT - 3,
+    );
+
+    if (filledWidth <= 0) {
+      return;
+    }
+
+    shield.fillStyle(0x2f9dff, 1);
+    shield.fillRect(
+      HEALTH_BAR_SEGMENT_X + 2,
+      BOSS_SHIELD_BAR_Y + 2,
+      filledWidth,
+      BOSS_SHIELD_BAR_HEIGHT - 3,
+    );
+    shield.fillStyle(0xbfe7ff, 0.95);
+    shield.fillRect(HEALTH_BAR_SEGMENT_X + 2, BOSS_SHIELD_BAR_Y + 2, filledWidth, 1);
+  }
+
   createBossRetryUi() {
     this.retrySplash = this.add
-      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, `boss-${this.level.id}-retry-splashscreen`)
+      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, this.getBossKey('retry-splashscreen'))
       .setScrollFactor(0)
       .setDepth(150)
       .setVisible(false);
@@ -776,6 +858,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   showBossRetryUi() {
+    this.retrySplash.setTexture(this.getBossKey('retry-splashscreen'));
     this.fitImageToScreen(this.retrySplash);
     this.retrySplash.setVisible(true);
     this.restartLevelButton.setVisible(true);
@@ -1016,8 +1099,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossIntroActive = true;
     this.bossIntroShown = true;
     this.bossState = 'intro';
-    this.placePlayerAtBossStart();
-    this.placeBossAtStart();
+    this.placeBossFightCharactersAtStart();
     this.activateBossCheckpoint();
     this.createArenaWall();
     this.panCameraToBossArena();
@@ -1042,8 +1124,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossCountdownActive = true;
     this.awaitingBossRetry = false;
     this.hideBossRetryUi();
-    this.placePlayerAtBossStart();
-    this.placeBossAtStart();
+    this.placeBossFightCharactersAtStart();
     this.activateBossCheckpoint();
     this.createArenaWall();
     this.setArenaCamera();
@@ -1064,15 +1145,21 @@ export class LevelScene extends Phaser.Scene {
     this.playerMaxHp = this.getPlayerBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
-    this.placePlayerAtBossStart();
-    this.placeBossAtStart();
+    if (this.bossPhase === 2) {
+      this.bossShieldMax = Math.ceil(this.bossMaxHp * BOSS_SHIELD_MAX_RATIO);
+      this.bossShieldHp = this.bossShieldMax;
+    } else {
+      this.bossShieldMax = 0;
+      this.bossShieldHp = 0;
+    }
+    this.placeBossFightCharactersAtStart();
     this.activateBossCheckpoint();
     this.createArenaWall();
     this.nextBossAttackAt = this.time.now + 700;
     this.setHealthBarsVisible(true);
     this.refreshHealthBars();
     this.setArenaCamera();
-    this.boss.play(`boss-${this.level.id}-move`, true);
+    this.boss.play(this.getBossKey('move'), true);
   }
 
   placePlayerAtBossStart() {
@@ -1089,8 +1176,14 @@ export class LevelScene extends Phaser.Scene {
     this.configurePlayerBody();
   }
 
+  placeBossFightCharactersAtStart() {
+    this.placePlayerAtBossStart();
+    this.placeBossAtStart();
+  }
+
   placeBossAtStart() {
-    const standKey = `boss-${this.level.id}-stand`;
+    const standKey = this.getBossKey('stand');
+    this.bossScale = this.resolveBossScale(standKey);
     this.boss.body.enable = true;
     this.boss.body.setAllowGravity(false);
     this.boss.body.setImmovable(true);
@@ -1118,11 +1211,13 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getBossDefeatedScale(defeatedKey) {
-    if (this.level.boss.defeatedScaleMatchesStand) {
-      const standKey = `boss-${this.level.id}-stand`;
+    const bossConfig = this.getBossConfig();
+
+    if (bossConfig.defeatedScaleMatchesStand) {
+      const standKey = this.getBossKey('stand');
       const standVisibleHeight = this.getTextureContentBounds(standKey).height;
       const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
-      const scaleMultiplier = this.level.boss.defeatedStandScaleMultiplier ?? 1;
+      const scaleMultiplier = bossConfig.defeatedStandScaleMultiplier ?? 1;
 
       return ((standVisibleHeight * this.bossScale) / defeatedVisibleHeight) *
         scaleMultiplier;
@@ -1131,13 +1226,15 @@ export class LevelScene extends Phaser.Scene {
     const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
     const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
 
-    return (playerVisibleHeight / defeatedVisibleHeight) * this.level.boss.defeatedScaleMultiplier;
+    return (playerVisibleHeight / defeatedVisibleHeight) * bossConfig.defeatedScaleMultiplier;
   }
 
   getBossDefeatedY(defeatedKey, defeatedScale) {
+    const bossConfig = this.getBossConfig();
+
     return this.level.boss.floorY +
       this.getTextureBottomPadding(defeatedKey) * defeatedScale +
-      this.level.boss.defeatedFootSink;
+      bossConfig.defeatedFootSink;
   }
 
   resolveBossScale(standKey) {
@@ -1146,7 +1243,7 @@ export class LevelScene extends Phaser.Scene {
 
     return (playerVisibleHeight / bossVisibleHeight) *
       BOSS_SCALE_MULTIPLIER *
-      this.level.boss.scaleMultiplier;
+      this.getBossConfig().scaleMultiplier;
   }
 
   getTextureBottomPadding(textureKey) {
@@ -1366,7 +1463,7 @@ export class LevelScene extends Phaser.Scene {
   showBossSplash() {
     this.hideBossSplash();
     this.bossSplash = this.add
-      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, `boss-${this.level.id}-splashscreen`)
+      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, this.getBossKey('splashscreen'))
       .setScrollFactor(0)
       .setDepth(140);
 
@@ -1464,7 +1561,7 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    const bossConfig = this.level.boss;
+    const bossConfig = this.getBossConfig();
     const distanceToPlayer = Math.abs(this.player.x - this.boss.x);
 
     if (distanceToPlayer <= bossConfig.projectileRange && this.time.now >= this.nextBossAttackAt) {
@@ -1489,7 +1586,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.boss.setVelocityX(this.bossDirection * bossConfig.speed);
     this.boss.setFlipX(this.bossDirection < 0);
-    this.boss.play(`boss-${this.level.id}-move`, true);
+    this.boss.play(this.getBossKey('move'), true);
     this.alignBossToFloor();
   }
 
@@ -1542,18 +1639,16 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    const bossConfig = this.getBossConfig();
+    const attackConfig = this.resolveBossAttackConfig(bossConfig);
+
     this.bossState = 'attack';
     this.boss.setVelocityX(0);
     this.boss.setFlipX(this.player.x < this.boss.x);
-    this.boss.play(`boss-${this.level.id}-attack`, true);
+    this.boss.play(attackConfig.animationKey, true);
     this.alignBossToFloor();
-    this.nextBossAttackAt = this.time.now + this.level.boss.attackCooldown;
-
-    this.time.delayedCall(320, () => {
-      if (this.bossFightActive && !this.bossDefeated && this.bossState === 'attack') {
-        this.fireBossProjectile();
-      }
-    });
+    this.nextBossAttackAt = this.time.now + bossConfig.attackCooldown;
+    this.scheduleBossAttackProjectile(attackConfig);
 
     this.boss.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       if (!this.bossDefeated && this.bossFightActive) {
@@ -1562,9 +1657,97 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  resolveBossAttackConfig(bossConfig) {
+    const isSpecial = this.shouldUsePhaseTwoSpecialAttack(bossConfig);
+
+    return {
+      ...bossConfig,
+      animationKey: isSpecial ? this.getBossKey('attack-special') : this.getBossKey('attack'),
+      projectileTextureKey: isSpecial ? this.getBossKey('shot-special') : this.getBossKey('shot'),
+      shotOffsetX: isSpecial ? bossConfig.specialShotOffsetX ?? bossConfig.shotOffsetX : bossConfig.shotOffsetX,
+      shotScale: isSpecial ? bossConfig.specialShotScale ?? bossConfig.shotScale : bossConfig.shotScale,
+      shotBodyHeight: isSpecial
+        ? bossConfig.specialShotBodyHeight ?? bossConfig.shotBodyHeight
+        : bossConfig.shotBodyHeight,
+      shotBodyOffsetY: isSpecial ? bossConfig.specialShotBodyOffsetY : undefined,
+      shotBodyExtendsToFloor: isSpecial ? bossConfig.specialShotBodyExtendsToFloor : undefined,
+      shotBodyLeadInset: isSpecial ? bossConfig.specialShotBodyLeadInset : undefined,
+      shotBodyFullWidth: isSpecial ? bossConfig.specialShotBodyFullWidth : undefined,
+      damage: isSpecial
+        ? bossConfig.specialAttackDamage ?? PHASE_TWO_SPECIAL_ATTACK_DAMAGE
+        : bossConfig.damage,
+      projectileFrame: isSpecial
+        ? bossConfig.specialProjectileFrame ?? bossConfig.projectileFrame
+        : bossConfig.projectileFrame,
+    };
+  }
+
+  shouldUsePhaseTwoSpecialAttack(bossConfig) {
+    return this.level.id === PHASE_TWO_BOSS_ID &&
+      this.bossPhase === 2 &&
+      this.anims.exists(this.getBossKey('attack-special')) &&
+      this.textures.exists(this.getBossKey('shot-special')) &&
+      Math.random() <= this.getBossSpecialAttackChance(
+        bossConfig.specialAttackChance ?? CARD_SPREAD_ATTACK_CHANCE,
+      );
+  }
+
+  scheduleBossAttackProjectile(attackConfig) {
+    const projectileFrame = attackConfig.projectileFrame;
+    const canFire = () => this.bossFightActive && !this.bossDefeated && this.bossState === 'attack';
+
+    if (!projectileFrame) {
+      this.time.delayedCall(320, () => {
+        if (canFire()) {
+          this.fireBossProjectile();
+        }
+      });
+      return;
+    }
+
+    let fired = false;
+    const stopListening = () => {
+      this.boss.off(Phaser.Animations.Events.ANIMATION_UPDATE, handleUpdate);
+    };
+    const fire = () => {
+      if (!fired && canFire()) {
+        fired = true;
+        this.fireBossProjectile(attackConfig);
+      }
+    };
+    const handleUpdate = (_animation, frame) => {
+      if (!canFire()) {
+        stopListening();
+        return;
+      }
+
+      if (this.getAnimationFrameNumber(frame) >= projectileFrame) {
+        stopListening();
+        fire();
+      }
+    };
+
+    this.boss.on(Phaser.Animations.Events.ANIMATION_UPDATE, handleUpdate);
+    this.boss.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      stopListening();
+      fire();
+    });
+  }
+
+  getAnimationFrameNumber(frame) {
+    const frameName = String(frame?.textureFrame ?? frame?.frame?.name ?? frame?.key ?? '');
+    const frameNumberMatch = frameName.match(/-(\d+)$/);
+
+    if (frameNumberMatch) {
+      return Number(frameNumberMatch[1]);
+    }
+
+    return (frame?.index ?? 0) + 1;
+  }
+
   shouldStartBossChargeAttack() {
     return this.level.id === CHARGE_ATTACK_BOSS_ID &&
-      this.anims.exists(`boss-${this.level.id}-charge`) &&
+      this.anims.exists(this.getBossKey('charge')) &&
       Math.random() <= this.getBossSpecialAttackChance(CHARGE_ATTACK_CHANCE);
   }
 
@@ -1578,9 +1761,9 @@ export class LevelScene extends Phaser.Scene {
     this.bossDirection = direction;
     this.boss.setVelocityX(0);
     this.boss.setFlipX(direction < 0);
-    this.boss.play(`boss-${this.level.id}-charge`, true);
+    this.boss.play(this.getBossKey('charge'), true);
     this.alignBossToFloor();
-    this.nextBossAttackAt = this.time.now + this.level.boss.attackCooldown;
+    this.nextBossAttackAt = this.time.now + this.getBossConfig().attackCooldown;
 
     this.time.delayedCall(CHARGE_ATTACK_WINDUP_MS, () => {
       if (
@@ -1595,7 +1778,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   updateBossCharge() {
-    const bossConfig = this.level.boss;
+    const bossConfig = this.getBossConfig();
     const distanceCharged = Math.abs(this.boss.x - this.bossChargeStartX);
     const hitLeftEdge = this.boss.x <= bossConfig.arenaLeft + 80;
     const hitRightEdge = this.boss.x >= bossConfig.arenaRight - 80;
@@ -1625,15 +1808,15 @@ export class LevelScene extends Phaser.Scene {
 
     if (!this.bossDefeated && this.bossFightActive && !this.bossIsHit) {
       this.bossState = 'patrol';
-      this.boss.play(`boss-${this.level.id}-move`, true);
+      this.boss.play(this.getBossKey('move'), true);
       this.alignBossToFloor();
     }
   }
 
-  fireBossProjectile() {
+  fireBossProjectile(attackConfig = this.getBossConfig()) {
     const direction = this.player.x < this.boss.x ? -1 : 1;
-    const bossConfig = this.level.boss;
-    const textureKey = `boss-${this.level.id}-shot`;
+    const bossConfig = attackConfig;
+    const textureKey = attackConfig.projectileTextureKey ?? this.getBossKey('shot');
     const useCardSpread = this.shouldUseBossCardSpread() &&
       Math.random() <= this.getBossSpecialAttackChance(CARD_SPREAD_ATTACK_CHANCE);
 
@@ -1669,7 +1852,7 @@ export class LevelScene extends Phaser.Scene {
       bossConfig.shotBodyWidth / projectile.scaleX,
       bossConfig.shotBodyHeight / projectile.scaleY,
     );
-    this.centerProjectileBody(projectile, textureKey, bossConfig);
+    this.centerProjectileBody(projectile, textureKey, bossConfig, direction);
     projectile.setVelocity(direction * bossConfig.projectileSpeed, velocityY);
     projectile.setData('spawnX', projectile.x);
     projectile.setData('range', bossConfig.projectileRange);
@@ -1702,14 +1885,31 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  centerProjectileBody(projectile, textureKey, bossConfig) {
+  centerProjectileBody(projectile, textureKey, bossConfig, direction = 1) {
     const bounds = this.getTextureContentBounds(textureKey);
-    const bodyWidth = bossConfig.shotBodyWidth / projectile.scaleX;
-    const bodyHeight = bossConfig.shotBodyHeight / projectile.scaleY;
+    const source = this.textures.get(textureKey).getSourceImage();
+    const bodyWidth = bossConfig.shotBodyFullWidth
+      ? source.width
+      : bossConfig.shotBodyWidth / projectile.scaleX;
+    const configuredBodyHeight = bossConfig.shotBodyHeight / projectile.scaleY;
+    const bodyX = Number.isFinite(bossConfig.shotBodyLeadInset)
+      ? direction > 0
+        ? bounds.x + bounds.width - bodyWidth - bossConfig.shotBodyLeadInset
+        : bounds.x + bossConfig.shotBodyLeadInset
+      : bossConfig.shotBodyFullWidth
+        ? 0
+        : bounds.x + (bounds.width - bodyWidth) / 2;
+    const bodyY = bounds.y + (bounds.height - configuredBodyHeight) / 2 +
+      (bossConfig.shotBodyOffsetY ?? 0) / projectile.scaleY;
+    const floorBodyBottom = (this.level.boss.floorY - projectile.y) / projectile.scaleY +
+      projectile.height * projectile.originY;
+    const bodyHeight = bossConfig.shotBodyExtendsToFloor
+      ? Math.max(configuredBodyHeight, floorBodyBottom - bodyY)
+      : configuredBodyHeight;
 
     projectile.body.setOffset(
-      bounds.x + (bounds.width - bodyWidth) / 2,
-      bounds.y + (bounds.height - bodyHeight) / 2,
+      bodyX,
+      bodyY,
     );
   }
 
@@ -1739,7 +1939,9 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getPaintPuddleTextureKey() {
-    return `boss-${this.level.id}-puddle`;
+    const phaseKey = this.getBossKey('puddle');
+
+    return this.textures.exists(phaseKey) ? phaseKey : `boss-${this.level.id}-puddle`;
   }
 
   getPaintPuddleTuning() {
@@ -1985,7 +2187,7 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.playerBossContactDamageArmed = false;
-    this.damagePlayer(this.level.boss.damage);
+    this.damagePlayer(this.getBossConfig().damage);
 
     if (this.bossState === 'charge') {
       this.endBossChargeAttack();
@@ -1997,7 +2199,7 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    const damage = projectile.getData('damage') ?? this.level.boss.damage;
+    const damage = projectile.getData('damage') ?? this.getBossConfig().damage;
     projectile.destroy();
     this.damagePlayer(damage);
   }
@@ -2008,12 +2210,23 @@ export class LevelScene extends Phaser.Scene {
     }
 
     const hit = this.resolveHitDamage(1, PLAYER_CRIT_CHANCE);
-    this.bossHp = Math.max(0, this.bossHp - hit.damage);
+    let remainingDamage = hit.damage;
+
+    if (this.bossPhase === 2 && this.bossShieldHp > 0) {
+      const shieldDamage = Math.min(this.bossShieldHp, remainingDamage);
+      this.bossShieldHp -= shieldDamage;
+      remainingDamage -= shieldDamage;
+    }
+
+    if (remainingDamage > 0) {
+      this.bossHp = Math.max(0, this.bossHp - remainingDamage);
+    }
+
     this.bossIsHit = true;
     this.bossState = 'hit';
     this.boss.setVelocityX(0);
     this.player.setVelocityY(BOSS_HIT_BOUNCE);
-    this.boss.play(`boss-${this.level.id}-hit`, true);
+    this.boss.play(this.getBossKey('hit'), true);
     this.alignBossToFloor();
     this.refreshHealthBars();
 
@@ -2044,7 +2257,7 @@ export class LevelScene extends Phaser.Scene {
     this.playerIsHit = true;
     this.player.setVelocityX(0);
     this.player.stop();
-    this.player.play(`player-hit-boss-${this.level.id}`, true);
+    this.player.play(this.getPlayerHitBossKey(), true);
     this.refreshHealthBars();
     this.cameras.main.shake(130, 0.003);
 
@@ -2133,6 +2346,11 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    if (this.hasBossPhaseTwo() && this.bossPhase === 1) {
+      this.startBossPhaseTwo();
+      return;
+    }
+
     this.bossDefeated = true;
     this.bossFightActive = false;
     this.bossIntroActive = false;
@@ -2142,11 +2360,11 @@ export class LevelScene extends Phaser.Scene {
     this.boss.setVelocity(0, 0);
     this.boss.body.enable = false;
     this.boss.stop();
-    const defeatedKey = `boss-${this.level.id}-defeated`;
+    const defeatedKey = this.getBossKey('defeated');
     const defeatedScale = this.getBossDefeatedScale(defeatedKey);
     this.boss.setTexture(defeatedKey);
     this.boss.setScale(
-      defeatedScale * (this.level.boss.defeatedScaleXMultiplier ?? 1),
+      defeatedScale * (this.getBossConfig().defeatedScaleXMultiplier ?? 1),
       defeatedScale,
     );
     this.boss.setY(this.getBossDefeatedY(defeatedKey, defeatedScale));
@@ -2159,6 +2377,38 @@ export class LevelScene extends Phaser.Scene {
     this.goal.refreshBody();
     this.setArenaCamera();
     this.showToast('Boss besiegt!');
+  }
+
+  startBossPhaseTwo() {
+    this.bossPhase = 2;
+    this.bossFightActive = false;
+    this.bossIntroActive = true;
+    this.bossCountdownActive = false;
+    this.bossIsHit = false;
+    this.bossState = 'intro';
+    this.nextBossAttackAt = 0;
+    this.bossBodyBounds = null;
+    this.bossBodyTextureKey = null;
+    this.boss.setVelocity(0, 0);
+    this.boss.stop();
+    this.clearProjectiles();
+    this.clearPaintPuddles();
+    this.setHealthBarsVisible(false);
+    this.ensureBossAnimations();
+    this.placeBossFightCharactersAtStart();
+    this.createArenaWall();
+    this.setArenaCamera();
+    this.showBossSplash();
+    this.showToast('Phase 2!');
+
+    this.time.delayedCall(BOSS_INTRO_MS, () => {
+      if (!this.bossIntroActive || this.bossDefeated || this.bossPhase !== 2) {
+        return;
+      }
+
+      this.hideBossSplash();
+      this.startBossCountdown();
+    });
   }
 
   loseBossFight() {
@@ -2176,7 +2426,15 @@ export class LevelScene extends Phaser.Scene {
     this.playerMaxHp = this.getPlayerBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
-    const standKey = `boss-${this.level.id}-stand`;
+    if (this.bossPhase === 2) {
+      this.bossShieldMax = Math.ceil(this.bossMaxHp * BOSS_SHIELD_MAX_RATIO);
+      this.bossShieldHp = this.bossShieldMax;
+    } else {
+      this.bossShieldMax = 0;
+      this.bossShieldHp = 0;
+    }
+    const standKey = this.getBossKey('stand');
+    this.bossScale = this.resolveBossScale(standKey);
     this.boss.setTexture(standKey);
     this.boss.setScale(this.bossScale);
     this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
@@ -2191,10 +2449,13 @@ export class LevelScene extends Phaser.Scene {
   }
 
   configureBossBody() {
-    if (!this.bossBodyBounds) {
-      const bounds = this.getTextureContentBounds(`boss-${this.level.id}-stand`);
+    const standKey = this.getBossKey('stand');
+
+    if (!this.bossBodyBounds || this.bossBodyTextureKey !== standKey) {
+      const bounds = this.getTextureContentBounds(standKey);
       const width = bounds.width * BOSS_BODY_WIDTH_RATIO;
       const height = bounds.height * BOSS_BODY_HEIGHT_RATIO;
+      this.bossBodyTextureKey = standKey;
       this.bossBodyBounds = {
         x: bounds.x + (bounds.width - width) / 2,
         y: bounds.y + bounds.height - height + bounds.height * BOSS_BODY_VERTICAL_SHIFT_RATIO,
@@ -2239,11 +2500,14 @@ export class LevelScene extends Phaser.Scene {
   setHealthBarsVisible(visible) {
     [this.playerHealthBar?.container, this.bossHealthBar?.container]
       .forEach((entry) => entry?.setVisible(visible));
+    this.renderBossShieldBar();
   }
 
   refreshHealthBars() {
+    this.bossHealthBar.labelText.setText(this.getBossConfig().name ?? `Boss ${this.level.id}`);
     this.renderSegmentedHealthBar(this.playerHealthBar, this.playerHp, this.playerMaxHp);
     this.renderSegmentedHealthBar(this.bossHealthBar, this.bossHp, this.bossMaxHp);
+    this.renderBossShieldBar();
   }
 
   collectPickup(player, pickup) {

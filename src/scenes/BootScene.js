@@ -6,8 +6,10 @@ import backgroundUrl from '../../assets/backgrounds/background.webp';
 import bridgeHillsBackgroundUrl from '../../assets/backgrounds/bridge_hills_background.webp';
 import skyRouteBackgroundUrl from '../../assets/backgrounds/sky_route_background.webp';
 import cloudGardenBackgroundUrl from '../../assets/backgrounds/cloud_garden_background.webp';
+import horsesBackgroundUrl from '../../assets/backgrounds/horses_background.webp';
 import championRidgeBackgroundUrl from '../../assets/backgrounds/champion_ridge_background.webp';
 import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_background.webp';
+import shishaCityBackgroundUrl from '../../assets/backgrounds/shisha_city_background.webp';
 import critHitUrl from '../../assets/shared/crit_hit.webp';
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
@@ -26,6 +28,11 @@ const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
 const BOSS_LEVEL_COUNT = 6;
+const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
+  'player-hit-boss-6-source',
+  'player-hit-boss-6-2-source',
+]);
+const PLAYER_HIT_WIDE_FRAME_SCALE_MULTIPLIER = 1.06;
 const assetUrls = import.meta.glob([
   '../../assets/**/*.webp',
   '../../assets/**/*.png',
@@ -56,6 +63,36 @@ function resolveOptionalBossAsset(levelId, fileBaseName) {
 
 const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
   const id = index + 1;
+  const phase2 = id === 6
+    ? {
+        splashscreen: resolveAssetUrl(id, `boss_${id}_splashscreen_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_splashscreen.webp`),
+        retrySplashscreen: resolveAssetUrl(id, `boss_${id}_retry_splashscreen_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_retry_splashscreen.webp`),
+        stand: resolveAssetUrl(id, `boss_${id}_stand_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_stand.webp`),
+        move: resolveAssetUrl(id, `boss_${id}_move_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_move.webp`),
+        hit: resolveAssetUrl(id, `boss_${id}_hit_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_hit.webp`),
+        attack: resolveAssetUrl(id, `boss_${id}_attack_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.webp`),
+        specialAttack: resolveAssetUrl(id, `boss_${id}_attack_2_special.webp`),
+        defeated: resolveAssetUrl(id, `boss_${id}_defeated_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
+        shot: resolveAssetUrl(id, `boss_${id}_shot_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
+        specialShot: resolveAssetUrl(id, `boss_${id}_shot_2_special.webp`),
+        puddle: resolveOptionalBossAsset(id, `boss_${id}_puddle_2`) ??
+          resolveOptionalBossAsset(id, `boss_${id}_puddle`),
+        charge: resolveOptionalBossAsset(id, `boss_${id}_charge_2`) ??
+          resolveOptionalBossAsset(id, `mainChar_${id}_charge_2`) ??
+          resolveOptionalBossAsset(id, `boss_${id}_charge`) ??
+          resolveOptionalBossAsset(id, `mainChar_${id}_charge`),
+        playerHit: resolveAssetUrl(id, `mainChar_${id}_hit_2.webp`) ??
+          resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
+      }
+    : null;
 
   return {
     id,
@@ -71,6 +108,7 @@ const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
     charge: resolveOptionalBossAsset(id, `boss_${id}_charge`) ??
       resolveOptionalBossAsset(id, `mainChar_${id}_charge`),
     playerHit: resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
+    phase2,
   };
 });
 
@@ -87,7 +125,9 @@ export class BootScene extends Phaser.Scene {
     this.load.image('background-bridge-hills', bridgeHillsBackgroundUrl);
     this.load.image('background-sky-route', skyRouteBackgroundUrl);
     this.load.image('background-cloud-garden', cloudGardenBackgroundUrl);
+    this.load.image('background-horses', horsesBackgroundUrl);
     this.load.image('background-champion-ridge', championRidgeBackgroundUrl);
+    this.load.image('background-shisha-city', shishaCityBackgroundUrl);
     this.load.image('background-river-steps', riverStepsBackgroundUrl);
     this.load.image('ground-platform-source', groundPlatformUrl);
     this.load.image('level-template', levelTemplateUrl);
@@ -124,6 +164,30 @@ export class BootScene extends Phaser.Scene {
         this.load.image(`boss-${asset.id}-charge-source`, asset.charge);
       }
       this.load.image(`player-hit-boss-${asset.id}-source`, asset.playerHit);
+
+      if (asset.phase2) {
+        this.load.image(`boss-${asset.id}-2-splashscreen`, asset.phase2.splashscreen);
+        this.load.image(`boss-${asset.id}-2-retry-splashscreen`, asset.phase2.retrySplashscreen);
+        this.load.image(`boss-${asset.id}-2-stand`, asset.phase2.stand);
+        this.load.image(`boss-${asset.id}-2-move-source`, asset.phase2.move);
+        this.load.image(`boss-${asset.id}-2-hit-source`, asset.phase2.hit);
+        this.load.image(`boss-${asset.id}-2-attack-source`, asset.phase2.attack);
+        if (asset.phase2.specialAttack) {
+          this.load.image(`boss-${asset.id}-2-attack-special-source`, asset.phase2.specialAttack);
+        }
+        this.load.image(`boss-${asset.id}-2-defeated`, asset.phase2.defeated);
+        this.load.image(`boss-${asset.id}-2-shot`, asset.phase2.shot);
+        if (asset.phase2.specialShot) {
+          this.load.image(`boss-${asset.id}-2-shot-special`, asset.phase2.specialShot);
+        }
+        if (asset.phase2.puddle) {
+          this.load.image(`boss-${asset.id}-2-puddle`, asset.phase2.puddle);
+        }
+        if (asset.phase2.charge) {
+          this.load.image(`boss-${asset.id}-2-charge-source`, asset.phase2.charge);
+        }
+        this.load.image(`player-hit-boss-${asset.id}-2-source`, asset.phase2.playerHit);
+      }
     });
   }
 
@@ -148,6 +212,16 @@ export class BootScene extends Phaser.Scene {
       this.textures
         .get(`boss-${asset.id}-retry-splashscreen`)
         .setFilter(Phaser.Textures.FilterMode.LINEAR);
+
+      if (asset.phase2) {
+        this.textures
+          .get(`boss-${asset.id}-2-splashscreen`)
+          .setFilter(Phaser.Textures.FilterMode.LINEAR);
+
+        this.textures
+          .get(`boss-${asset.id}-2-retry-splashscreen`)
+          .setFilter(Phaser.Textures.FilterMode.LINEAR);
+      }
     });
   }
 
@@ -294,55 +368,72 @@ export class BootScene extends Phaser.Scene {
     this.textures.addCanvas(targetKey, canvas);
   }
 
-  createBossAnimations(levelId) {
+  createBossAnimations(levelId, phase = 1) {
     const asset = BOSS_ASSETS.find((entry) => entry.id === levelId);
+    const phaseAsset = phase === 2 ? asset?.phase2 : asset;
+    const keyPrefix = phase === 2 ? `boss-${levelId}-2` : `boss-${levelId}`;
+    const playerHitPrefix = phase === 2 ? `player-hit-boss-${levelId}-2` : `player-hit-boss-${levelId}`;
 
-    if (!asset || this.anims.exists(`boss-${asset.id}-move`)) {
+    if (!asset || !phaseAsset || this.anims.exists(`${keyPrefix}-move`)) {
       return;
     }
 
     const sourceKeys = [
-      `boss-${asset.id}-move-source`,
-      `boss-${asset.id}-hit-source`,
-      `boss-${asset.id}-attack-source`,
+      `${keyPrefix}-move-source`,
+      `${keyPrefix}-hit-source`,
+      `${keyPrefix}-attack-source`,
     ];
 
-    if (asset.charge) {
-      sourceKeys.push(`boss-${asset.id}-charge-source`);
+    if (phaseAsset.charge) {
+      sourceKeys.push(`${keyPrefix}-charge-source`);
+    }
+    if (phaseAsset.specialAttack) {
+      sourceKeys.push(`${keyPrefix}-attack-special-source`);
     }
 
-    const bossLayout = this.createBossFrameLayout(asset.id, sourceKeys);
+    const bossLayout = this.createBossFrameLayout(levelId, `${keyPrefix}-stand`, sourceKeys);
 
-    this.createBossFrames(`boss-${asset.id}-move-source`, `boss-${asset.id}-move-frame`, bossLayout);
-    this.createBossFrames(`boss-${asset.id}-hit-source`, `boss-${asset.id}-hit-frame`, bossLayout);
-    this.createBossFrames(`boss-${asset.id}-attack-source`, `boss-${asset.id}-attack-frame`, bossLayout);
-    if (asset.charge) {
-      this.createBossFrames(`boss-${asset.id}-charge-source`, `boss-${asset.id}-charge-frame`, bossLayout);
+    this.createBossFrames(`${keyPrefix}-move-source`, `${keyPrefix}-move-frame`, bossLayout);
+    this.createBossFrames(`${keyPrefix}-hit-source`, `${keyPrefix}-hit-frame`, bossLayout);
+    this.createBossFrames(`${keyPrefix}-attack-source`, `${keyPrefix}-attack-frame`, bossLayout);
+    if (phaseAsset.charge) {
+      this.createBossFrames(`${keyPrefix}-charge-source`, `${keyPrefix}-charge-frame`, bossLayout);
+    }
+    if (phaseAsset.specialAttack) {
+      this.createBossFrames(`${keyPrefix}-attack-special-source`, `${keyPrefix}-attack-special-frame`, bossLayout);
     }
     this.createPlayerHitFrames(
-      `player-hit-boss-${asset.id}-source`,
-      `player-hit-boss-${asset.id}-frame`,
+      `${playerHitPrefix}-source`,
+      `${playerHitPrefix}-frame`,
     );
 
-    this.createAnimation(`boss-${asset.id}-move`, `boss-${asset.id}-move-frame`, 8, -1);
+    this.createAnimation(`${keyPrefix}-move`, `${keyPrefix}-move-frame`, 8, -1);
     this.createAnimation(
-      `boss-${asset.id}-hit`,
-      `boss-${asset.id}-hit-frame`,
+      `${keyPrefix}-hit`,
+      `${keyPrefix}-hit-frame`,
       HIT_ANIMATION_FRAME_RATE,
       0,
     );
     this.createAnimation(
-      `boss-${asset.id}-attack`,
-      `boss-${asset.id}-attack-frame`,
+      `${keyPrefix}-attack`,
+      `${keyPrefix}-attack-frame`,
       ATTACK_ANIMATION_FRAME_RATE,
       0,
     );
-    if (asset.charge) {
-      this.createAnimation(`boss-${asset.id}-charge`, `boss-${asset.id}-charge-frame`, 12, -1);
+    if (phaseAsset.charge) {
+      this.createAnimation(`${keyPrefix}-charge`, `${keyPrefix}-charge-frame`, 12, -1);
+    }
+    if (phaseAsset.specialAttack) {
+      this.createAnimation(
+        `${keyPrefix}-attack-special`,
+        `${keyPrefix}-attack-special-frame`,
+        ATTACK_ANIMATION_FRAME_RATE,
+        0,
+      );
     }
     this.createAnimation(
-      `player-hit-boss-${asset.id}`,
-      `player-hit-boss-${asset.id}-frame`,
+      playerHitPrefix,
+      `${playerHitPrefix}-frame`,
       HIT_ANIMATION_FRAME_RATE,
       0,
     );
@@ -388,8 +479,8 @@ export class BootScene extends Phaser.Scene {
     }
   }
 
-  createBossFrameLayout(bossId, sourceKeys) {
-    const targetImage = this.textures.get(`boss-${bossId}-stand`).getSourceImage();
+  createBossFrameLayout(bossId, standKey, sourceKeys) {
+    const targetImage = this.textures.get(standKey).getSourceImage();
     const targetBounds = this.getVisibleBounds(targetImage);
     const frameBoundsBySource = Object.fromEntries(
       sourceKeys.map((sourceKey) => [sourceKey, this.getBossSheetFrameBounds(sourceKey)]),
@@ -516,7 +607,10 @@ export class BootScene extends Phaser.Scene {
     const frameRect = this.getSheetFrameRect(image, column, row);
     const useWideAttackFrame = sourceKey === 'boss-2-attack-source' ||
       sourceKey === 'boss-3-attack-source' ||
-      sourceKey === 'boss-4-attack-source';
+      sourceKey === 'boss-4-attack-source' ||
+      sourceKey === 'boss-6-attack-source' ||
+      sourceKey === 'boss-6-2-attack-source' ||
+      sourceKey === 'boss-6-2-attack-special-source';
     const gutter = useWideAttackFrame ? 0 : BOSS_FRAME_GUTTER;
     const isChargeFrame = sourceKey.endsWith('-charge-source');
     const horizontalGutter = isChargeFrame ||
@@ -776,16 +870,24 @@ export class BootScene extends Phaser.Scene {
         this.clearWhiteBackground(sourceContext, frameRect.width, frameRect.height);
         const sourceBounds = this.getVisibleBounds(sourceCanvas);
 
+        const heightScale = targetBounds.height / sourceBounds.height;
+        const needsWideCanvas = PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS.has(sourceKey);
+        const scale = needsWideCanvas
+          ? heightScale * PLAYER_HIT_WIDE_FRAME_SCALE_MULTIPLIER
+          : heightScale;
+        const drawWidth = sourceBounds.width * scale;
+        const drawHeight = sourceBounds.height * scale;
         const canvas = document.createElement('canvas');
-        canvas.width = targetImage.width;
+        canvas.width = needsWideCanvas
+          ? Math.ceil(Math.max(targetImage.width, drawWidth + BOSS_FRAME_PADDING * 2))
+          : targetImage.width;
         canvas.height = targetImage.height;
 
         const context = canvas.getContext('2d');
         context.imageSmoothingEnabled = false;
-        const scale = targetBounds.height / sourceBounds.height;
-        const drawWidth = sourceBounds.width * scale;
-        const drawHeight = sourceBounds.height * scale;
-        const drawX = targetBounds.x + (targetBounds.width - drawWidth) / 2;
+        const drawX = needsWideCanvas
+          ? (canvas.width - drawWidth) / 2
+          : targetBounds.x + (targetBounds.width - drawWidth) / 2;
         const drawY = targetBounds.y + targetBounds.height - drawHeight;
 
         context.drawImage(
