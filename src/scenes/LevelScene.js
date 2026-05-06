@@ -35,6 +35,9 @@ const BOSS_STOMP_MAX_HEIGHT = 112;
 const BOSS_STOMP_EXTRA_WIDTH = 24;
 const BOSS_DIRECTION_DEADZONE = 36;
 const BOSS_CONTACT_DAMAGE_HEIGHT = 46;
+const BOSS_DODGE_EDGE_MARGIN = 90;
+const BOSS_DODGE_MIN_SPACE = 150;
+const BOSS_DODGE_ANIMATION_TIME_SCALE = 2.2;
 const PLAYER_HIT_LOCK_MS = 1000;
 const BOSS_HIT_LOCK_MS = 1000;
 const HEALTH_BAR_WIDTH = 220;
@@ -144,6 +147,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossShieldMax = 0;
     this.bossShieldHp = 0;
     this.nextBossAttackAt = 0;
+    this.nextBossContactDamageAt = 0;
     this.bossDirection = -1;
     this.bossScale = 1;
     this.bossBottomPaddingByTexture = new Map();
@@ -154,6 +158,9 @@ export class LevelScene extends Phaser.Scene {
     this.bossChargeStartedAt = 0;
     this.bossChargeStartX = 0;
     this.bossChargeDirection = -1;
+    this.bossDodgeStartedAt = 0;
+    this.bossDodgeDirection = -1;
+    this.nextBossDodgeAt = 0;
   }
 
   create() {
@@ -1156,6 +1163,7 @@ export class LevelScene extends Phaser.Scene {
     this.activateBossCheckpoint();
     this.createArenaWall();
     this.nextBossAttackAt = this.time.now + 700;
+    this.nextBossContactDamageAt = 0;
     this.setHealthBarsVisible(true);
     this.refreshHealthBars();
     this.setArenaCamera();
@@ -1192,6 +1200,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.setScale(this.bossScale);
     this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
     this.boss.setFlipX(true);
+    this.setBossAnimationTimeScale(1);
     this.bossDirection = -1;
     this.configureBossBody();
   }
@@ -1208,6 +1217,12 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.boss.setY(this.getBossVisualY(this.boss.texture.key));
+  }
+
+  setBossAnimationTimeScale(timeScale) {
+    if (this.boss?.anims) {
+      this.boss.anims.timeScale = timeScale;
+    }
   }
 
   getBossDefeatedScale(defeatedKey) {
@@ -1556,6 +1571,11 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    if (this.bossState === 'dodge') {
+      this.updateBossDodge();
+      return;
+    }
+
     if (this.bossState === 'attack') {
       this.boss.setVelocityX(0);
       return;
@@ -1607,13 +1627,11 @@ export class LevelScene extends Phaser.Scene {
   }
 
   checkBossStomp() {
-    if (!this.bossFightActive || this.bossDefeated || this.bossIntroActive || this.bossIsHit) {
+    if (!this.bossFightActive || this.bossDefeated || this.bossIntroActive || this.bossIsHit || this.bossState === 'dodge') {
       return;
     }
 
-    if (this.isPlayerInBossStompZone()) {
-      this.damageBoss();
-    }
+    this.resolveBossStompAttempt();
   }
 
   isPlayerInBossStompZone() {
@@ -1627,6 +1645,101 @@ export class LevelScene extends Phaser.Scene {
       heightAboveBoss <= BOSS_STOMP_MAX_HEIGHT;
 
     return playerIsFalling && horizontallyAligned && aboveBoss;
+  }
+
+  resolveBossStompAttempt() {
+    if (!this.isPlayerInBossStompZone()) {
+      return false;
+    }
+
+    if (this.tryBossDodge()) {
+      return true;
+    }
+
+    this.damageBoss();
+    return true;
+  }
+
+  tryBossDodge() {
+    const bossConfig = this.getBossConfig();
+
+    if (
+      this.time.now < this.nextBossDodgeAt ||
+      this.bossState === 'charge' ||
+      Math.random() > (bossConfig.dodgeChance ?? 0)
+    ) {
+      return false;
+    }
+
+    const arenaLeft = bossConfig.arenaLeft + BOSS_DODGE_EDGE_MARGIN;
+    const arenaRight = bossConfig.arenaRight - BOSS_DODGE_EDGE_MARGIN;
+    const awayFromPlayer = this.player.x < this.boss.x ? 1 : -1;
+    const targetAwayX = this.boss.x + awayFromPlayer * BOSS_DODGE_MIN_SPACE;
+    const direction = targetAwayX >= arenaLeft && targetAwayX <= arenaRight
+      ? awayFromPlayer
+      : -awayFromPlayer;
+
+    this.bossState = 'dodge';
+    this.bossDodgeStartedAt = this.time.now;
+    this.bossDodgeDirection = direction;
+    this.nextBossDodgeAt = this.time.now + (bossConfig.dodgeCooldown ?? 1200);
+    this.nextBossAttackAt = Math.max(
+      this.nextBossAttackAt,
+      this.time.now + (bossConfig.dodgeAttackCooldown ?? bossConfig.attackCooldown),
+    );
+    this.nextBossContactDamageAt = Math.max(
+      this.nextBossContactDamageAt,
+      this.time.now + (
+        bossConfig.dodgeContactCooldown ??
+        bossConfig.dodgeAttackCooldown ??
+        bossConfig.attackCooldown
+      ),
+    );
+    this.bossDirection = direction;
+    this.boss.setFlipX(direction < 0);
+    this.boss.setVelocityX(direction * (bossConfig.dodgeSpeed ?? 720));
+    this.setBossAnimationTimeScale(BOSS_DODGE_ANIMATION_TIME_SCALE);
+    this.boss.play(this.getBossKey('move'), true);
+    this.alignBossToFloor();
+
+    return true;
+  }
+
+  updateBossDodge() {
+    const bossConfig = this.getBossConfig();
+    const duration = bossConfig.dodgeDuration ?? 220;
+    const hitLeftEdge = this.boss.x <= bossConfig.arenaLeft + BOSS_DODGE_EDGE_MARGIN;
+    const hitRightEdge = this.boss.x >= bossConfig.arenaRight - BOSS_DODGE_EDGE_MARGIN;
+    const timedOut = this.time.now - this.bossDodgeStartedAt >= duration;
+
+    if (hitLeftEdge) {
+      this.boss.setX(bossConfig.arenaLeft + BOSS_DODGE_EDGE_MARGIN);
+    } else if (hitRightEdge) {
+      this.boss.setX(bossConfig.arenaRight - BOSS_DODGE_EDGE_MARGIN);
+    }
+
+    this.boss.setVelocityX(this.bossDodgeDirection * (bossConfig.dodgeSpeed ?? 720));
+    this.boss.setFlipX(this.bossDodgeDirection < 0);
+    this.alignBossToFloor();
+
+    if (hitLeftEdge || hitRightEdge || timedOut) {
+      this.endBossDodge();
+    }
+  }
+
+  endBossDodge() {
+    if (this.bossState !== 'dodge') {
+      return;
+    }
+
+    this.boss.setVelocityX(0);
+    this.setBossAnimationTimeScale(1);
+
+    if (!this.bossDefeated && this.bossFightActive && !this.bossIsHit) {
+      this.bossState = 'patrol';
+      this.boss.play(this.getBossKey('move'), true);
+      this.alignBossToFloor();
+    }
   }
 
   startBossAttack() {
@@ -1645,6 +1758,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossState = 'attack';
     this.boss.setVelocityX(0);
     this.boss.setFlipX(this.player.x < this.boss.x);
+    this.setBossAnimationTimeScale(1);
     this.boss.play(attackConfig.animationKey, true);
     this.alignBossToFloor();
     this.nextBossAttackAt = this.time.now + bossConfig.attackCooldown;
@@ -1761,6 +1875,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossDirection = direction;
     this.boss.setVelocityX(0);
     this.boss.setFlipX(direction < 0);
+    this.setBossAnimationTimeScale(1);
     this.boss.play(this.getBossKey('charge'), true);
     this.alignBossToFloor();
     this.nextBossAttackAt = this.time.now + this.getBossConfig().attackCooldown;
@@ -2168,13 +2283,17 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    if (this.bossState === 'dodge') {
+      return;
+    }
+
     const playerCanHit =
       !this.bossIsHit &&
       player.body.velocity.y > 80 &&
       this.isPlayerInBossStompZone();
 
     if (playerCanHit) {
-      this.damageBoss();
+      this.resolveBossStompAttempt();
       return;
     }
 
@@ -2183,6 +2302,10 @@ export class LevelScene extends Phaser.Scene {
     }
 
     if (!this.playerBossContactDamageArmed) {
+      return;
+    }
+
+    if (this.time.now < this.nextBossContactDamageAt) {
       return;
     }
 
@@ -2226,6 +2349,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossState = 'hit';
     this.boss.setVelocityX(0);
     this.player.setVelocityY(BOSS_HIT_BOUNCE);
+    this.setBossAnimationTimeScale(1);
     this.boss.play(this.getBossKey('hit'), true);
     this.alignBossToFloor();
     this.refreshHealthBars();
@@ -2387,6 +2511,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossIsHit = false;
     this.bossState = 'intro';
     this.nextBossAttackAt = 0;
+    this.nextBossContactDamageAt = 0;
     this.bossBodyBounds = null;
     this.bossBodyTextureKey = null;
     this.boss.setVelocity(0, 0);
@@ -2421,6 +2546,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossIsHit = false;
     this.bossState = 'stand';
     this.nextBossAttackAt = 0;
+    this.nextBossContactDamageAt = 0;
     this.boss.setVelocity(0, 0);
     this.boss.body.enable = true;
     this.playerMaxHp = this.getPlayerBossMaxHp();

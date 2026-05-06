@@ -14,6 +14,12 @@ const BOSS_DEFAULTS = {
     defeatedScaleMultiplier: 2.75,
     defeatedFootSink: 108,
     damage: 1,
+    dodgeChance: 0.28,
+    dodgeCooldown: 1800,
+    dodgeDuration: 200,
+    dodgeSpeed: 650,
+    dodgeAttackCooldown: 950,
+    dodgeContactCooldown: 950,
 }
 const BOSS_ARENA_AFTER_PICKUP_PADDING = 180
 const BOSS_ARENA_WIDTH = 1280
@@ -289,14 +295,14 @@ export const LEVELS = [
             name: "Der Schröder",
             scaleMultiplier: 1.2,
             shotOffsetX: 68,
-            shotOffsetY: -74,
+            shotOffsetY: -82,
             shotScale: 0.62,
             shotBodyWidth: 42,
             shotBodyHeight: 24,
             defeatedScaleMultiplier: 1.05,
             defeatedScaleMatchesStand: true,
             defeatedStandScaleMultiplier: 0.64,
-            defeatedFootSink: 20,
+            defeatedFootSink: 30,
         },
     },
     {
