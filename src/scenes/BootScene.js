@@ -15,7 +15,7 @@ import critHitUrl from '../../assets/shared/crit_hit.webp';
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
-import { LEVELS } from '../data/levels.js';
+import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 210;
@@ -194,12 +194,8 @@ export class BootScene extends Phaser.Scene {
   }
 
   loadBossAudio() {
-    LEVELS.forEach((level) => {
-      [level.boss?.audio?.splash, level.boss?.audio?.retrySplash].forEach((config) => {
-        if (!config?.key || !Array.isArray(config.urls) || config.urls.length === 0) {
-          return;
-        }
-
+    Object.values(BOSS_SPLASH_AUDIO).forEach((phases) => {
+      Object.values(phases).flat().forEach((config) => {
         this.load.audio(config.key, config.urls);
       });
     });

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
 import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
+import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
 import { LEVELS } from '../data/levels.js';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
 import { MusicControls } from '../ui/MusicControls.js';
@@ -168,6 +169,7 @@ export class LevelScene extends Phaser.Scene {
     this.gamepadButtons = {};
     this.gamepadInput = null;
     this.retrySelectionIndex = RETRY_RETRY_OPTION;
+    this.lastBossSplashAudioKeyByPhase = {};
   }
 
   create() {
@@ -898,7 +900,6 @@ export class LevelScene extends Phaser.Scene {
     this.retrySelectionIndex = RETRY_RETRY_OPTION;
     this.updateBossRetrySelectionUi();
     this.updateLevelMusicPause();
-    this.playBossSplashSound('retry');
   }
 
   hideBossRetryUi() {
@@ -1258,7 +1259,24 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    this.startBossCountdown();
+    this.awaitingBossRetry = false;
+    this.bossIntroActive = true;
+    this.bossState = 'intro';
+    this.hideBossRetryUi();
+    this.placeBossFightCharactersAtStart();
+    this.activateBossCheckpoint();
+    this.createArenaWall();
+    this.setArenaCamera();
+    this.showBossSplash();
+
+    this.time.delayedCall(BOSS_INTRO_MS, () => {
+      if (!this.bossIntroActive || this.bossDefeated) {
+        return;
+      }
+
+      this.hideBossSplash();
+      this.startBossCountdown();
+    });
   }
 
   restartCurrentLevel() {
@@ -1530,18 +1548,26 @@ export class LevelScene extends Phaser.Scene {
     image.setScale(scale);
   }
 
-  getBossSplashAudioConfig(kind) {
-    if (kind === 'retry') {
-      return this.level.boss.audio?.retrySplash;
+  getBossSplashAudioConfig() {
+    const configs = BOSS_SPLASH_AUDIO[this.level.id]?.[this.bossPhase] ?? [];
+    const playableConfigs = configs.filter((config) => this.cache.audio.exists(config.key));
+
+    if (playableConfigs.length === 0) {
+      return null;
     }
 
-    return this.level.boss.audio?.splash;
+    const lastKey = this.lastBossSplashAudioKeyByPhase[this.bossPhase];
+    const selectableConfigs = playableConfigs.length > 1
+      ? playableConfigs.filter((config) => config.key !== lastKey)
+      : playableConfigs;
+
+    return Phaser.Utils.Array.GetRandom(selectableConfigs);
   }
 
-  playBossSplashSound(kind) {
-    const config = this.getBossSplashAudioConfig(kind);
+  playBossSplashSound() {
+    const config = this.getBossSplashAudioConfig();
 
-    if (!config?.key || !this.cache.audio.exists(config.key) || this.sound.locked) {
+    if (!config?.key || this.sound.locked) {
       return;
     }
 
@@ -1561,6 +1587,7 @@ export class LevelScene extends Phaser.Scene {
 
     sound.play();
     this.activeBossSplashSound = { key: config.key, sound };
+    this.lastBossSplashAudioKeyByPhase[this.bossPhase] = config.key;
   }
 
   stopBossSplashSound() {
@@ -1588,7 +1615,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.fitImageToScreen(this.bossSplash);
     this.updateLevelMusicPause();
-    this.playBossSplashSound('splash');
+    this.playBossSplashSound();
   }
 
   panCameraToBossArena() {
