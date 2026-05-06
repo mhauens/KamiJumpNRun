@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This project is a Phaser 3 browser platformer using Vite. Keep changes focused and verify with `npm run build` after code changes.
+This project is a Phaser 3 browser platformer using Vite. Keep changes focused and verify with `pnpm build` after code changes.
 
 ## Project Overview
 
@@ -18,12 +18,12 @@ This project is a Phaser 3 browser platformer using Vite. Keep changes focused a
 ## Commands
 
 ```bash
-npm run dev
-npm run build
-npm run preview
+pnpm dev
+pnpm build
+pnpm preview
 ```
 
-Use `npm run build` as the baseline verification command.
+Use `pnpm build` as the baseline verification command.
 
 ## Assets
 

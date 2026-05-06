@@ -7,20 +7,18 @@ The game is designed for desktop browsers and touch devices. Apple touch devices
 ## Requirements
 
 - Node.js
-- npm
-
-The project also declares `pnpm@10.33.0` as its package manager, but the checked-in scripts work with npm as well.
+- pnpm 10.33.0
 
 ## Install
 
 ```bash
-npm install
+pnpm install
 ```
 
 ## Start Development Server
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open the local URL printed by Vite, usually:
@@ -32,13 +30,13 @@ http://127.0.0.1:5173/
 ## Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ## Preview Production Build
 
 ```bash
-npm run preview
+pnpm preview
 ```
 
 ## Development Start Level
