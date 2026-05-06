@@ -4,6 +4,7 @@ import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
 import { LEVELS } from '../data/levels.js';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
 import { MusicControls } from '../ui/MusicControls.js';
+import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 import { loadHighScore, saveHighScore } from '../utils/storage.js';
 
 const PLAYER_SCALE = 0.11;
@@ -111,6 +112,8 @@ const CHARGE_ATTACK_MAX_MS = 1050;
 const CHARGE_ATTACK_MAX_DISTANCE = 680;
 const PHASE_TWO_BOSS_ID = 6;
 const PHASE_TWO_SPECIAL_ATTACK_DAMAGE = 3;
+const RETRY_RESTART_OPTION = 0;
+const RETRY_RETRY_OPTION = 1;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -162,6 +165,9 @@ export class LevelScene extends Phaser.Scene {
     this.bossDodgeStartedAt = 0;
     this.bossDodgeDirection = -1;
     this.nextBossDodgeAt = 0;
+    this.gamepadButtons = {};
+    this.gamepadInput = null;
+    this.retrySelectionIndex = RETRY_RETRY_OPTION;
   }
 
   create() {
@@ -181,6 +187,7 @@ export class LevelScene extends Phaser.Scene {
     this.createLevelMusicControls();
     this.configureCollisions();
     this.configureCamera();
+    refreshGamepads(this);
     this.showToast(`Level ${this.level.id}: ${this.level.name}`);
   }
 
@@ -499,7 +506,7 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(101);
 
     this.helpText = this.add
-      .text(HUD_TEXT_X, 108, 'A/D oder Pfeile bewegen  Space springt  R respawn', {
+      .text(HUD_TEXT_X, 108, 'A/D, Pfeile, Stick oder D-Pad bewegen  Space/A springt  R/Start respawn', {
         fontFamily: 'Verdana, sans-serif',
         fontSize: '14px',
         color: '#ffffff',
@@ -780,26 +787,36 @@ export class LevelScene extends Phaser.Scene {
       labelFontSize: '43px',
     });
 
-    this.restartLevelButton.on('pointerdown', () => {
-      if (!this.awaitingBossRetry) {
-        return;
-      }
+    this.restartLevelButton.on('pointerdown', () => this.restartCurrentLevel());
 
-      this.scene.start('LevelScene', {
-        levelIndex: this.levelIndex,
-        score: this.levelStartScore,
-        levelStartScore: this.levelStartScore,
-        highScore: this.highScore,
-      });
-    });
+    this.retryButton.on('pointerdown', () => this.retryBossFight());
 
-    this.retryButton.on('pointerdown', () => {
-      if (!this.awaitingBossRetry) {
-        return;
-      }
+    this.retrySelectionMarker = this.add
+      .text(GAME_WIDTH / 2 - 238, GAME_HEIGHT - 188, '>', {
+        fontFamily: 'Arial, Verdana, sans-serif',
+        fontSize: '58px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        stroke: '#17324d',
+        strokeThickness: 8,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(153)
+      .setVisible(false);
 
-      this.startBossCountdown();
-    });
+    this.retryControllerHelpText = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 286, 'Controller: Hoch/Runter waehlen  A bestaetigt', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '24px',
+        color: '#ffffff',
+        stroke: '#17324d',
+        strokeThickness: 6,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(153)
+      .setVisible(false);
   }
 
   createRetryActionButton({
@@ -878,6 +895,8 @@ export class LevelScene extends Phaser.Scene {
     this.retrySplash.setVisible(true);
     this.restartLevelButton.setVisible(true);
     this.retryButton.setVisible(true);
+    this.retrySelectionIndex = RETRY_RETRY_OPTION;
+    this.updateBossRetrySelectionUi();
     this.updateLevelMusicPause();
     this.playBossSplashSound('retry');
   }
@@ -889,6 +908,8 @@ export class LevelScene extends Phaser.Scene {
     this.restartLevelButton?.setScale(1);
     this.retryButton?.setVisible(false);
     this.retryButton?.setScale(1);
+    this.retrySelectionMarker?.setVisible(false);
+    this.retryControllerHelpText?.setVisible(false);
     this.updateLevelMusicPause();
   }
 
@@ -954,13 +975,20 @@ export class LevelScene extends Phaser.Scene {
   update() {
     this.updateLevelMusicPause();
     this.updateLevelHudVisibility();
+    this.gamepadInput = readGamepadInput(this, this.gamepadButtons);
+    this.gamepadButtons = this.gamepadInput.buttons;
 
     if (this.levelComplete) {
       this.player.setVelocityX(0);
       return;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.keys.restart)) {
+    if (this.awaitingBossRetry) {
+      this.handleBossRetryInput();
+      return;
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.keys.restart) || this.gamepadInput.restartJustPressed) {
       this.respawnPlayer(true);
       return;
     }
@@ -1046,8 +1074,8 @@ export class LevelScene extends Phaser.Scene {
       (groundedNow || this.time.now - this.lastGroundedAt <= GROUNDED_GRACE_MS);
     let jumpedThisFrame = false;
 
-    const movingLeft = this.keys.left.isDown || this.keys.leftArrow.isDown;
-    const movingRight = this.keys.right.isDown || this.keys.rightArrow.isDown;
+    const movingLeft = this.keys.left.isDown || this.keys.leftArrow.isDown || this.gamepadInput?.left;
+    const movingRight = this.keys.right.isDown || this.keys.rightArrow.isDown || this.gamepadInput?.right;
 
     const playerSpeed = this.getPlayerSpeed();
 
@@ -1061,7 +1089,7 @@ export class LevelScene extends Phaser.Scene {
       this.player.setVelocityX(0);
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.keys.jump) && canJump) {
+    if ((Phaser.Input.Keyboard.JustDown(this.keys.jump) || this.gamepadInput?.actionJustPressed) && canJump) {
       this.player.setVelocityY(JUMP_VELOCITY);
       jumpedThisFrame = true;
     }
@@ -1176,6 +1204,74 @@ export class LevelScene extends Phaser.Scene {
     this.refreshHealthBars();
     this.setArenaCamera();
     this.boss.play(this.getBossKey('move'), true);
+  }
+
+  handleBossRetryInput() {
+    if (!this.gamepadInput?.connected) {
+      this.updateBossRetrySelectionUi();
+      return;
+    }
+
+    if (this.gamepadInput.menuUpJustPressed || this.gamepadInput.menuDownJustPressed) {
+      this.retrySelectionIndex = this.retrySelectionIndex === RETRY_RESTART_OPTION
+        ? RETRY_RETRY_OPTION
+        : RETRY_RESTART_OPTION;
+      this.updateBossRetrySelectionUi();
+    }
+
+    if (this.gamepadInput?.actionJustPressed) {
+      this.confirmBossRetrySelection();
+    }
+  }
+
+  updateBossRetrySelectionUi() {
+    const showControllerSelection = Boolean(this.awaitingBossRetry && this.gamepadInput?.connected);
+    const selectedButton = this.retrySelectionIndex === RETRY_RESTART_OPTION
+      ? this.restartLevelButton
+      : this.retryButton;
+
+    this.retrySelectionMarker?.setVisible(showControllerSelection);
+    this.retryControllerHelpText?.setVisible(showControllerSelection);
+
+    if (!showControllerSelection) {
+      this.restartLevelButton?.setScale(1);
+      this.retryButton?.setScale(1);
+      return;
+    }
+
+    this.restartLevelButton.setScale(this.retrySelectionIndex === RETRY_RESTART_OPTION ? 1.08 : 1);
+    this.retryButton.setScale(this.retrySelectionIndex === RETRY_RETRY_OPTION ? 1.08 : 1);
+    this.retrySelectionMarker.setPosition(selectedButton.x - selectedButton.width / 2 - 40, selectedButton.y - 6);
+  }
+
+  confirmBossRetrySelection() {
+    if (this.retrySelectionIndex === RETRY_RESTART_OPTION) {
+      this.restartCurrentLevel();
+      return;
+    }
+
+    this.retryBossFight();
+  }
+
+  retryBossFight() {
+    if (!this.awaitingBossRetry) {
+      return;
+    }
+
+    this.startBossCountdown();
+  }
+
+  restartCurrentLevel() {
+    if (!this.awaitingBossRetry) {
+      return;
+    }
+
+    this.scene.start('LevelScene', {
+      levelIndex: this.levelIndex,
+      score: this.levelStartScore,
+      levelStartScore: this.levelStartScore,
+      highScore: this.highScore,
+    });
   }
 
   placePlayerAtBossStart() {

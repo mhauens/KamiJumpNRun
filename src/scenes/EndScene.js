@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
 import { LEVELS } from '../data/levels.js';
 import { saveHighScore } from '../utils/storage.js';
+import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 
 export class EndScene extends Phaser.Scene {
   constructor() {
@@ -20,6 +21,8 @@ export class EndScene extends Phaser.Scene {
   }
 
   create() {
+    this.gamepadButtons = {};
+
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x7ed2ff).setOrigin(0, 0);
     this.add.rectangle(90, 90, GAME_WIDTH - 180, GAME_HEIGHT - 180, 0x18334f, 0.85)
       .setOrigin(0, 0)
@@ -69,7 +72,7 @@ export class EndScene extends Phaser.Scene {
       .text(
         GAME_WIDTH / 2,
         550,
-        'Druecke Space zurueck zum Startscreen',
+        'Druecke Space oder Controller-A zurueck zum Startscreen',
         {
           fontFamily: 'Verdana, sans-serif',
           fontSize: '26px',
@@ -81,5 +84,16 @@ export class EndScene extends Phaser.Scene {
     this.input.keyboard.once('keydown-SPACE', () => {
       this.scene.start('StartScene');
     });
+
+    refreshGamepads(this);
+  }
+
+  update() {
+    const gamepadInput = readGamepadInput(this, this.gamepadButtons);
+    this.gamepadButtons = gamepadInput.buttons;
+
+    if (gamepadInput.actionJustPressed) {
+      this.scene.start('StartScene');
+    }
   }
 }

@@ -4,6 +4,7 @@ import introMusicOggUrl from '../../assets/shared/KamisWorldIntro.ogg';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
 import { resolveStartLevelIndex } from '../game/devConfig.js';
 import { MusicControls } from '../ui/MusicControls.js';
+import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 
 const BUTTON_WIDTH = 260;
 const BUTTON_HEIGHT = 92;
@@ -19,6 +20,7 @@ export class StartScene extends Phaser.Scene {
 
   create() {
     this.hasStartedGame = false;
+    this.gamepadButtons = {};
 
     this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'start-screen')
       .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
@@ -37,6 +39,17 @@ export class StartScene extends Phaser.Scene {
     this.input.keyboard.once('keydown-SPACE', () => {
       this.startGame();
     });
+
+    refreshGamepads(this);
+  }
+
+  update() {
+    const gamepadInput = readGamepadInput(this, this.gamepadButtons);
+    this.gamepadButtons = gamepadInput.buttons;
+
+    if (gamepadInput.actionJustPressed) {
+      this.startGame();
+    }
   }
 
   createPlayButton() {
