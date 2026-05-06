@@ -14,7 +14,7 @@ const BOSS_DEFAULTS = {
     defeatedScaleMultiplier: 2.75,
     defeatedFootSink: 108,
     damage: 1,
-    dodgeChance: 0.23,
+    dodgeChance: 0.25,
     dodgeCooldown: 1800,
     dodgeDuration: 200,
     dodgeSpeed: 650,
@@ -109,7 +109,8 @@ function withBossDefaults(level) {
 export const LEVELS = [
     {
         id: 1,
-        name: "Sunny Start",
+        name: "Art City",
+        backgroundKey: "background-art-city",
         worldWidth: 2800,
         worldHeight: 900,
         spawn: { x: 120, y: 650 },
@@ -161,7 +162,7 @@ export const LEVELS = [
     {
         id: 2,
         name: "Bridge Hills",
-        backgroundKey: "background-bridge-hills",
+        backgroundKey: "background-candy-town",
         worldWidth: 3400,
         worldHeight: 920,
         spawn: { x: 120, y: 650 },
@@ -228,7 +229,7 @@ export const LEVELS = [
     {
         id: 3,
         name: "Sky Route",
-        backgroundKey: "background-sky-route",
+        backgroundKey: "background-card-city",
         worldWidth: 4100,
         worldHeight: 960,
         spawn: { x: 120, y: 650 },

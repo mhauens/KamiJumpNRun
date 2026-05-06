@@ -57,6 +57,7 @@ const BOSS_SHIELD_BAR_Y = HEALTH_BAR_BAR_Y + HEALTH_BAR_HEIGHT + 6;
 const BOSS_SHIELD_BAR_HEIGHT = 7;
 const BOSS_SHIELD_MAX_RATIO = 0.5;
 const PLAYER_ARENA_FOOT_SINK = 30;
+const CHECKPOINT_TRIGGER_WIDTH = 72;
 const BOSS_COUNTDOWN_SECONDS = 3;
 const CAMERA_EXIT_PAN_MS = 700;
 const BOSS_BASE_HP = 5;
@@ -410,6 +411,13 @@ export class LevelScene extends Phaser.Scene {
         .setData('label', entry.label)
         .setData('activated', false)
         .setTint(index === 0 ? 0xffb39d : 0xffffff);
+
+      checkpoint.refreshBody();
+      checkpoint.body.setSize(CHECKPOINT_TRIGGER_WIDTH, GAME_HEIGHT);
+      checkpoint.body.setOffset(
+        checkpoint.displayOriginX - CHECKPOINT_TRIGGER_WIDTH / 2,
+        -entry.y,
+      );
     });
   }
 
@@ -2160,14 +2168,16 @@ export class LevelScene extends Phaser.Scene {
       .setDisplaySize(tuning.displayWidth, displayHeight)
       .setDepth(6);
 
-    const bodyWidth = PAINT_PUDDLE_BODY_WIDTH / scale;
-    const bodyHeight = PAINT_PUDDLE_BODY_HEIGHT / scale;
+    puddle.refreshBody();
+
+    const contentDisplayWidth = bounds.width * scale;
+    const bodyWidth = Math.min(PAINT_PUDDLE_BODY_WIDTH, contentDisplayWidth);
+    const bodyHeight = PAINT_PUDDLE_BODY_HEIGHT;
     puddle.body.setSize(bodyWidth, bodyHeight);
     puddle.body.setOffset(
-      bounds.x + (bounds.width - bodyWidth) / 2,
-      bounds.y + Math.max(0, bounds.height * 0.24),
+      bounds.x * scale + (contentDisplayWidth - bodyWidth) / 2,
+      bounds.y * scale,
     );
-    puddle.refreshBody();
 
     this.tweens.add({
       targets: puddle,

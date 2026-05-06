@@ -3,12 +3,11 @@ import mainCharStandUrl from '../../assets/mainChar/mainChar_stand.webp';
 import mainCharJumpUrl from '../../assets/mainChar/mainChar_jump.webp';
 import mainCharWalkUrl from '../../assets/mainChar/mainChar_walk.webp';
 import backgroundUrl from '../../assets/backgrounds/background.webp';
-import bridgeHillsBackgroundUrl from '../../assets/backgrounds/bridge_hills_background.webp';
-import skyRouteBackgroundUrl from '../../assets/backgrounds/sky_route_background.webp';
-import cloudGardenBackgroundUrl from '../../assets/backgrounds/cloud_garden_background.webp';
+import artCityBackgroundUrl from '../../assets/backgrounds/art_city_background.webp';
+import candyTownBackgroundUrl from '../../assets/backgrounds/candy_town_background.webp';
+import cardCityBackgroundUrl from '../../assets/backgrounds/card_city_background.webp';
 import horsesBackgroundUrl from '../../assets/backgrounds/horses_background.webp';
 import championRidgeBackgroundUrl from '../../assets/backgrounds/champion_ridge_background.webp';
-import riverStepsBackgroundUrl from '../../assets/backgrounds/river_steps_background.webp';
 import shishaCityBackgroundUrl from '../../assets/backgrounds/shisha_city_background.webp';
 import critHitUrl from '../../assets/shared/crit_hit.webp';
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
@@ -34,8 +33,8 @@ const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
 ]);
 const PLAYER_HIT_WIDE_FRAME_SCALE_MULTIPLIER = 1.06;
 const assetUrls = import.meta.glob([
-  '../../assets/**/*.webp',
-  '../../assets/**/*.png',
+  '../../assets/boss_*/*.webp',
+  '../../assets/boss_*/*.png',
   '!../../assets/**/old/**',
   '!../../assets/**/OLD/**',
 ], {
@@ -122,13 +121,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image('char-jump', mainCharJumpUrl);
     this.load.image('char-walk-source', mainCharWalkUrl);
     this.load.image('background', backgroundUrl);
-    this.load.image('background-bridge-hills', bridgeHillsBackgroundUrl);
-    this.load.image('background-sky-route', skyRouteBackgroundUrl);
-    this.load.image('background-cloud-garden', cloudGardenBackgroundUrl);
+    this.load.image('background-art-city', artCityBackgroundUrl);
+    this.load.image('background-candy-town', candyTownBackgroundUrl);
+    this.load.image('background-card-city', cardCityBackgroundUrl);
     this.load.image('background-horses', horsesBackgroundUrl);
     this.load.image('background-champion-ridge', championRidgeBackgroundUrl);
     this.load.image('background-shisha-city', shishaCityBackgroundUrl);
-    this.load.image('background-river-steps', riverStepsBackgroundUrl);
     this.load.image('ground-platform-source', groundPlatformUrl);
     this.load.image('level-template', levelTemplateUrl);
     this.load.image('start-screen', startScreenUrl);
