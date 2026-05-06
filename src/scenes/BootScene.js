@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import introMusicMp3Url from '../../assets/shared/KamisWorldIntro.mp3';
+import introMusicOggUrl from '../../assets/shared/KamisWorldIntro.ogg';
 import mainCharStandUrl from '../../assets/mainChar/mainChar_stand.webp';
 import mainCharJumpUrl from '../../assets/mainChar/mainChar_jump.webp';
 import mainCharWalkUrl from '../../assets/mainChar/mainChar_walk.webp';
@@ -32,6 +34,7 @@ const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
   'player-hit-boss-6-2-source',
 ]);
 const PLAYER_HIT_WIDE_FRAME_SCALE_MULTIPLIER = 1.06;
+const INTRO_MUSIC_KEY = 'kamis-world-intro';
 const assetUrls = import.meta.glob([
   '../../assets/boss_*/*.webp',
   '../../assets/boss_*/*.png',
@@ -131,6 +134,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('level-template', levelTemplateUrl);
     this.load.image('start-screen', startScreenUrl);
     this.load.image('crit-hit', critHitUrl);
+    this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
     this.loadBossAssets();
     this.loadBossAudio();
 
