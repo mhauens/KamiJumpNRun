@@ -14,6 +14,8 @@ const SLIDER_WIDTH = 74;
 const SLIDER_HEIGHT = 8;
 const SLIDER_KNOB_RADIUS = 9;
 const ICON_COLOR = 0x143240;
+const MUTE_ACTIVE_BG_COLOR = 0xd7262f;
+const MUTE_ACTIVE_BORDER_COLOR = 0xffffff;
 const ICON_KEYS = {
   mute: 'audio-icon-mute',
   pause: 'audio-icon-pause',
@@ -255,19 +257,41 @@ export class MusicControls {
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
 
-    bg.fillStyle(0xffffff, 0.84);
-    bg.fillRoundedRect(x, y, width, height, 8);
-    bg.lineStyle(2, ICON_COLOR, 0.75);
-    bg.strokeRoundedRect(x, y, width, height, 8);
+    this.drawButtonBackground(bg, x, y, width, height);
     this.fitIcon(iconImage, width - 14, height - 10);
     hitArea.on('pointerdown', onPointerDown);
 
     return {
       icon,
+      bg,
       iconImage,
       hitArea,
+      x,
+      y,
+      width,
+      height,
       parts: [bg, iconImage, hitArea],
     };
+  }
+
+  drawButtonBackground(
+    bg,
+    x,
+    y,
+    width,
+    height,
+    {
+      fillColor = 0xffffff,
+      fillAlpha = 0.84,
+      borderColor = ICON_COLOR,
+      borderAlpha = 0.75,
+    } = {},
+  ) {
+    bg.clear();
+    bg.fillStyle(fillColor, fillAlpha);
+    bg.fillRoundedRect(x, y, width, height, 8);
+    bg.lineStyle(2, borderColor, borderAlpha);
+    bg.strokeRoundedRect(x, y, width, height, 8);
   }
 
   fitIcon(image, maxWidth, maxHeight) {
@@ -277,10 +301,45 @@ export class MusicControls {
     image.setDisplaySize(source.width * scale, source.height * scale);
   }
 
-  setButtonIcon(button, icon) {
+  setButtonIcon(button, icon, { white = false } = {}) {
     button.icon = icon;
-    button.iconImage.setTexture(ICON_KEYS[icon]);
+    button.iconImage.setTexture(white ? this.getWhiteIconKey(icon) : ICON_KEYS[icon]);
     this.fitIcon(button.iconImage, button.hitArea.width - 14, button.hitArea.height - 10);
+  }
+
+  getWhiteIconKey(icon) {
+    const sourceKey = ICON_KEYS[icon];
+    const whiteKey = `${sourceKey}-white`;
+
+    if (this.scene.textures.exists(whiteKey)) {
+      return whiteKey;
+    }
+
+    const sourceImage = this.scene.textures.get(sourceKey).getSourceImage();
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceImage.width;
+    canvas.height = sourceImage.height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(sourceImage, 0, 0);
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index + 3] === 0) {
+        continue;
+      }
+
+      pixels[index] = 255;
+      pixels[index + 1] = 255;
+      pixels[index + 2] = 255;
+    }
+
+    context.putImageData(imageData, 0, 0);
+    this.scene.textures.addCanvas(whiteKey, canvas);
+
+    return whiteKey;
   }
 
   togglePanel() {
@@ -420,7 +479,22 @@ export class MusicControls {
     }
 
     this.setButtonIcon(this.playPauseButton, this.userPaused || this.autoPaused ? 'play' : 'pause');
-    this.setButtonIcon(this.muteButton, this.muted ? 'volume' : 'mute');
+    this.setButtonIcon(this.muteButton, this.muted ? 'mute' : 'mute', { white: this.muted });
+    this.drawButtonBackground(
+      this.muteButton.bg,
+      this.muteButton.x,
+      this.muteButton.y,
+      this.muteButton.width,
+      this.muteButton.height,
+      this.muted
+        ? {
+          fillColor: MUTE_ACTIVE_BG_COLOR,
+          fillAlpha: 1,
+          borderColor: MUTE_ACTIVE_BORDER_COLOR,
+          borderAlpha: 0.95,
+        }
+        : undefined,
+    );
   }
 
   redrawSlider() {
