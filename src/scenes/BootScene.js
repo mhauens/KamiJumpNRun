@@ -16,6 +16,7 @@ import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
 import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
+import { RETRY_SOUNDS } from '../data/retrySounds.js';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 210;
@@ -137,6 +138,7 @@ export class BootScene extends Phaser.Scene {
     this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
     this.loadBossAssets();
     this.loadBossAudio();
+    this.loadRetryAudio();
 
     this.createLoadingLabel();
   }
@@ -198,6 +200,12 @@ export class BootScene extends Phaser.Scene {
       Object.values(phases).flat().forEach((config) => {
         this.load.audio(config.key, config.urls);
       });
+    });
+  }
+
+  loadRetryAudio() {
+    RETRY_SOUNDS.forEach((config) => {
+      this.load.audio(config.key, config.urls);
     });
   }
 

@@ -3,6 +3,7 @@ import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
 import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
 import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
 import { LEVELS } from '../data/levels.js';
+import { getNextRetrySoundConfig, rememberRetrySoundPlayback } from '../data/retrySounds.js';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
 import { MusicControls } from '../ui/MusicControls.js';
 import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
@@ -170,11 +171,13 @@ export class LevelScene extends Phaser.Scene {
     this.gamepadInput = null;
     this.retrySelectionIndex = RETRY_RETRY_OPTION;
     this.lastBossSplashAudioKeyByPhase = {};
+    this.activeRetrySound = null;
   }
 
   create() {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.stopBossSplashSound();
+      this.stopRetrySound();
     });
 
     this.createWorld();
@@ -900,10 +903,12 @@ export class LevelScene extends Phaser.Scene {
     this.retrySelectionIndex = RETRY_RETRY_OPTION;
     this.updateBossRetrySelectionUi();
     this.updateLevelMusicPause();
+    this.playRetrySound();
   }
 
   hideBossRetryUi() {
     this.stopBossSplashSound();
+    this.stopRetrySound();
     this.retrySplash?.setVisible(false);
     this.restartLevelButton?.setVisible(false);
     this.restartLevelButton?.setScale(1);
@@ -1284,6 +1289,7 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    this.hideBossRetryUi();
     this.scene.start('LevelScene', {
       levelIndex: this.levelIndex,
       score: this.levelStartScore,
@@ -1574,7 +1580,7 @@ export class LevelScene extends Phaser.Scene {
     this.stopBossSplashSound();
 
     const sound = this.sound.add(config.key, {
-      volume: config.volume ?? 1,
+      volume: (config.volume ?? 1) * 0.5,
     });
 
     sound.once(Phaser.Sound.Events.COMPLETE, () => {
@@ -1588,6 +1594,54 @@ export class LevelScene extends Phaser.Scene {
     sound.play();
     this.activeBossSplashSound = { key: config.key, sound };
     this.lastBossSplashAudioKeyByPhase[this.bossPhase] = config.key;
+  }
+
+  playRetrySound() {
+    const config = getNextRetrySoundConfig();
+
+    if (!config?.key || this.sound.locked || !this.cache.audio.exists(config.key)) {
+      return;
+    }
+
+    this.stopRetrySound();
+
+    const sound = this.sound.add(config.key, {
+      volume: 0.5,
+    });
+
+    sound.once(Phaser.Sound.Events.COMPLETE, () => {
+      if (this.activeRetrySound === sound) {
+        this.activeRetrySound = null;
+      }
+
+      sound.destroy();
+    });
+
+    const started = sound.play();
+
+    if (!started) {
+      sound.destroy();
+      return;
+    }
+
+    this.activeRetrySound = sound;
+    rememberRetrySoundPlayback(config.key);
+  }
+
+  stopRetrySound() {
+    const activeSound = this.activeRetrySound;
+
+    this.activeRetrySound = null;
+
+    if (!activeSound) {
+      return;
+    }
+
+    if (activeSound.isPlaying || activeSound.isPaused) {
+      activeSound.stop();
+    }
+
+    activeSound.destroy();
   }
 
   stopBossSplashSound() {
