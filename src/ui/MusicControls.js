@@ -3,19 +3,33 @@ import audioIconMuteUrl from '../../assets/shared/audio_icon_mute.webp';
 import audioIconPauseUrl from '../../assets/shared/audio_icon_pause.webp';
 import audioIconPlayUrl from '../../assets/shared/audio_icon_play.webp';
 import audioIconVolumeUrl from '../../assets/shared/audio_icon_volume.webp';
+import {
+  AUDIO_CHANNELS,
+  getAudioMuted,
+  getAudioChannelVolume,
+  getAudioSettings,
+  setAudioMuted,
+  setAudioChannelVolume,
+  subscribeAudioSettings,
+} from '../utils/audioSettings.js';
 
-const PANEL_WIDTH = 282;
-const PANEL_HEIGHT = 56;
+const PANEL_WIDTH = 424;
+const PANEL_HEIGHT = 92;
 const TOGGLE_WIDTH = 48;
 const TOGGLE_HEIGHT = 48;
 const BUTTON_WIDTH = 38;
 const BUTTON_HEIGHT = 36;
-const SLIDER_WIDTH = 74;
+const SLIDER_WIDTH = 120;
 const SLIDER_HEIGHT = 8;
 const SLIDER_KNOB_RADIUS = 9;
 const ICON_COLOR = 0x143240;
 const MUTE_ACTIVE_BG_COLOR = 0xd7262f;
 const MUTE_ACTIVE_BORDER_COLOR = 0xffffff;
+const CHANNEL_ROWS = [
+  { channel: AUDIO_CHANNELS.music, label: 'Music', y: 20 },
+  { channel: AUDIO_CHANNELS.sfx, label: 'SFX', y: 46 },
+  { channel: AUDIO_CHANNELS.voice, label: 'Voice', y: 72 },
+];
 const ICON_KEYS = {
   mute: 'audio-icon-mute',
   pause: 'audio-icon-pause',
@@ -40,21 +54,22 @@ export class MusicControls {
     this.audioUrls = audioUrls;
     this.x = x;
     this.y = y;
-    this.initialVolume = initialVolume;
+    this.baseVolume = initialVolume;
     this.align = align;
     this.depth = depth;
     this.persistBetweenScenes = persistBetweenScenes;
     this.music = null;
     this.userPaused = false;
     this.autoPaused = false;
-    this.muted = false;
-    this.volume = initialVolume;
-    this.draggingVolume = false;
+    this.audioSettings = getAudioSettings();
+    this.muted = getAudioMuted();
+    this.draggingChannel = null;
     this.expanded = false;
     this.destroyed = false;
+    this.channelSliders = new Map();
     this.playWhenUnlocked = () => this.play();
     this.releaseVolumeDrag = () => {
-      this.draggingVolume = false;
+      this.draggingChannel = null;
     };
     this.restoreSharedAudioState();
   }
@@ -90,8 +105,6 @@ export class MusicControls {
     }
 
     this.music = sharedEntry.music;
-    this.volume = sharedEntry.volume;
-    this.muted = sharedEntry.muted;
     this.userPaused = sharedEntry.userPaused;
   }
 
@@ -102,8 +115,6 @@ export class MusicControls {
 
     SHARED_AUDIO.set(this.audioKey, {
       music: this.music,
-      volume: this.volume,
-      muted: this.muted,
       userPaused: this.userPaused,
     });
   }
@@ -166,7 +177,7 @@ export class MusicControls {
       .setDepth(this.depth);
     this.panelBg = this.scene.add.graphics().setScrollFactor(0);
 
-    this.panelBg.fillStyle(0xffffff, 0.68);
+    this.panelBg.fillStyle(0xffffff, 0.72);
     this.panelBg.fillRoundedRect(0, 0, PANEL_WIDTH, PANEL_HEIGHT, 8);
     this.panelBg.lineStyle(2, ICON_COLOR, 0.65);
     this.panelBg.strokeRoundedRect(0, 0, PANEL_WIDTH, PANEL_HEIGHT, 8);
@@ -174,55 +185,34 @@ export class MusicControls {
     this.toggleButton = this.createButton(layout.toggleX, 4, TOGGLE_WIDTH, TOGGLE_HEIGHT, 'volume', () => {
       this.togglePanel();
     });
-    this.playPauseButton = this.createButton(layout.playX, 10, BUTTON_WIDTH, BUTTON_HEIGHT, 'pause', () => {
+    this.playPauseButton = this.createButton(layout.playX, 8, BUTTON_WIDTH, BUTTON_HEIGHT, 'pause', () => {
       this.togglePlayback();
     });
-    this.muteButton = this.createButton(layout.muteX, 10, BUTTON_WIDTH, BUTTON_HEIGHT, 'mute', () => {
+    this.muteButton = this.createButton(layout.playX, 48, BUTTON_WIDTH, BUTTON_HEIGHT, 'mute', () => {
       this.toggleMute();
     });
 
-    this.sliderX = layout.sliderX;
-    this.volumeTrack = this.scene.add.graphics().setScrollFactor(0);
-    this.volumeFill = this.scene.add.graphics().setScrollFactor(0);
-    this.volumeKnob = this.scene.add.graphics().setScrollFactor(0);
-    this.volumeIcon = this.scene.add.image(layout.volumeIconX, 32, ICON_KEYS.volume).setScrollFactor(0);
-    this.fitIcon(this.volumeIcon, 26, 22);
-    this.volumeHitArea = this.scene.add
-      .rectangle(
-        this.sliderX + SLIDER_WIDTH / 2,
-        32,
-        SLIDER_WIDTH + SLIDER_KNOB_RADIUS * 2,
-        BUTTON_HEIGHT,
-        0xffffff,
-        0,
-      )
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-
-    this.volumeHitArea.on('pointerdown', (pointer) => {
-      this.draggingVolume = true;
-      this.setVolumeFromPointer(pointer);
+    CHANNEL_ROWS.forEach((row) => {
+      this.channelSliders.set(row.channel, this.createChannelSlider(row, layout));
     });
-    this.volumeHitArea.on('pointermove', (pointer) => {
-      if (this.draggingVolume) {
-        this.setVolumeFromPointer(pointer);
-      }
-    });
-    this.scene.input.on('pointerup', this.releaseVolumeDrag);
 
     this.panel.add([
       this.panelBg,
       ...this.toggleButton.parts,
       ...this.playPauseButton.parts,
       ...this.muteButton.parts,
-      this.volumeIcon,
-      this.volumeTrack,
-      this.volumeFill,
-      this.volumeKnob,
-      this.volumeHitArea,
+      ...Array.from(this.channelSliders.values()).flatMap((slider) => slider.parts),
     ]);
 
-    this.redrawSlider();
+    this.unsubscribeAudioSettings = subscribeAudioSettings((settings) => {
+      this.audioSettings = settings;
+      this.muted = Boolean(settings.muted);
+      this.applySettings();
+      this.redrawSliders();
+      this.updateIcons();
+    });
+
+    this.redrawSliders();
     this.updateIcons();
     this.updateVisibility();
   }
@@ -231,19 +221,19 @@ export class MusicControls {
     if (this.align === 'right') {
       return {
         toggleX: PANEL_WIDTH - TOGGLE_WIDTH,
-        playX: 12,
-        muteX: 58,
-        volumeIconX: 110,
-        sliderX: 124,
+        playX: 14,
+        labelX: 116,
+        sliderX: 188,
+        valueX: 326,
       };
     }
 
     return {
       toggleX: 0,
-      playX: 64,
-      muteX: 110,
-      volumeIconX: 162,
-      sliderX: 176,
+      playX: 66,
+      labelX: 166,
+      sliderX: 238,
+      valueX: 376,
     };
   }
 
@@ -271,6 +261,62 @@ export class MusicControls {
       width,
       height,
       parts: [bg, iconImage, hitArea],
+    };
+  }
+
+  createChannelSlider({ channel, label, y }, layout) {
+    const labelText = this.scene.add
+      .text(layout.labelX, y - 11, label, {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '15px',
+        fontStyle: 'bold',
+        color: '#143240',
+      })
+      .setScrollFactor(0);
+    const track = this.scene.add.graphics().setScrollFactor(0);
+    const fill = this.scene.add.graphics().setScrollFactor(0);
+    const knob = this.scene.add.graphics().setScrollFactor(0);
+    const valueText = this.scene.add
+      .text(layout.valueX, y - 12, '', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '14px',
+        color: '#143240',
+      })
+      .setScrollFactor(0);
+    const hitArea = this.scene.add
+      .rectangle(
+        layout.sliderX + SLIDER_WIDTH / 2,
+        y,
+        SLIDER_WIDTH + SLIDER_KNOB_RADIUS * 2,
+        BUTTON_HEIGHT,
+        0xffffff,
+        0,
+      )
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+
+    hitArea.on('pointerdown', (pointer) => {
+      this.draggingChannel = channel;
+      this.setVolumeFromPointer(pointer, channel);
+    });
+    hitArea.on('pointermove', (pointer) => {
+      if (this.draggingChannel === channel) {
+        this.setVolumeFromPointer(pointer, channel);
+      }
+    });
+    this.scene.input.on('pointerup', this.releaseVolumeDrag);
+
+    return {
+      channel,
+      y,
+      sliderX: layout.sliderX,
+      labelText,
+      track,
+      fill,
+      knob,
+      valueText,
+      hitArea,
+      parts: [labelText, track, fill, knob, valueText, hitArea],
     };
   }
 
@@ -352,11 +398,7 @@ export class MusicControls {
       this.panelBg,
       ...this.playPauseButton.parts,
       ...this.muteButton.parts,
-      this.volumeIcon,
-      this.volumeTrack,
-      this.volumeFill,
-      this.volumeKnob,
-      this.volumeHitArea,
+      ...Array.from(this.channelSliders.values()).flatMap((slider) => slider.parts),
     ];
 
     expandedParts.forEach((part) => {
@@ -365,11 +407,15 @@ export class MusicControls {
 
     this.playPauseButton.hitArea.input.enabled = this.expanded;
     this.muteButton.hitArea.input.enabled = this.expanded;
-    this.volumeHitArea.input.enabled = this.expanded;
+    this.channelSliders.forEach((slider) => {
+      slider.hitArea.input.enabled = this.expanded;
+    });
   }
 
   play() {
-    this.restoreSharedAudioState();
+    if (!this.music) {
+      this.restoreSharedAudioState();
+    }
 
     if (this.destroyed || this.userPaused || this.autoPaused) {
       this.updateIcons();
@@ -397,8 +443,7 @@ export class MusicControls {
     } else {
       this.music = this.scene.sound.add(this.audioKey, {
         loop: true,
-        volume: this.volume,
-        mute: this.muted,
+        volume: this.getMusicVolume(),
       });
       this.trackSharedAudioDestroy();
       this.music.play();
@@ -439,6 +484,7 @@ export class MusicControls {
       this.play();
     }
 
+    this.syncSharedAudioState();
     this.updateIcons();
   }
 
@@ -449,28 +495,32 @@ export class MusicControls {
   }
 
   toggleMute() {
-    this.muted = !this.muted;
-    this.applySettings();
-    this.syncSharedAudioState();
-    this.updateIcons();
+    setAudioMuted(!getAudioMuted());
   }
 
-  setVolumeFromPointer(pointer) {
-    const localX = Phaser.Math.Clamp(pointer.x - this.x - this.sliderX, 0, SLIDER_WIDTH);
+  setVolumeFromPointer(pointer, channel) {
+    const slider = this.channelSliders.get(channel);
 
-    this.volume = Phaser.Math.Clamp(localX / SLIDER_WIDTH, 0, 1);
-    this.applySettings();
-    this.syncSharedAudioState();
-    this.redrawSlider();
-  }
-
-  applySettings() {
-    if (!this.music) {
+    if (!slider) {
       return;
     }
 
-    this.music.setVolume(this.volume);
-    this.music.setMute(this.muted);
+    const localX = Phaser.Math.Clamp(pointer.x - this.x - slider.sliderX, 0, SLIDER_WIDTH);
+
+    setAudioChannelVolume(channel, localX / SLIDER_WIDTH);
+  }
+
+  getMusicVolume() {
+    return this.baseVolume * getAudioChannelVolume(AUDIO_CHANNELS.music);
+  }
+
+  applySettings() {
+    this.scene.sound.mute = this.muted;
+
+    if (this.music) {
+      this.music.setVolume(this.getMusicVolume());
+      this.music.setMute(false);
+    }
   }
 
   updateIcons() {
@@ -479,7 +529,7 @@ export class MusicControls {
     }
 
     this.setButtonIcon(this.playPauseButton, this.userPaused || this.autoPaused ? 'play' : 'pause');
-    this.setButtonIcon(this.muteButton, this.muted ? 'mute' : 'mute', { white: this.muted });
+    this.setButtonIcon(this.muteButton, 'mute', { white: this.muted });
     this.drawButtonBackground(
       this.muteButton.bg,
       this.muteButton.x,
@@ -497,41 +547,48 @@ export class MusicControls {
     );
   }
 
-  redrawSlider() {
-    const fillWidth = SLIDER_WIDTH * this.volume;
-    const knobX = this.sliderX + fillWidth;
+  redrawSliders() {
+    this.channelSliders.forEach((slider) => this.redrawSlider(slider));
+  }
 
-    this.volumeTrack.clear();
-    this.volumeTrack.fillStyle(ICON_COLOR, 0.22);
-    this.volumeTrack.fillRoundedRect(
-      this.sliderX,
-      32 - SLIDER_HEIGHT / 2,
+  redrawSlider(slider) {
+    const volume = getAudioChannelVolume(slider.channel);
+    const fillWidth = SLIDER_WIDTH * volume;
+    const knobX = slider.sliderX + fillWidth;
+
+    slider.track.clear();
+    slider.track.fillStyle(ICON_COLOR, 0.22);
+    slider.track.fillRoundedRect(
+      slider.sliderX,
+      slider.y - SLIDER_HEIGHT / 2,
       SLIDER_WIDTH,
       SLIDER_HEIGHT,
       SLIDER_HEIGHT / 2,
     );
 
-    this.volumeFill.clear();
+    slider.fill.clear();
     if (fillWidth > 0) {
-      this.volumeFill.fillStyle(ICON_COLOR, 1);
-      this.volumeFill.fillRoundedRect(
-        this.sliderX,
-        32 - SLIDER_HEIGHT / 2,
+      slider.fill.fillStyle(ICON_COLOR, 1);
+      slider.fill.fillRoundedRect(
+        slider.sliderX,
+        slider.y - SLIDER_HEIGHT / 2,
         fillWidth,
         SLIDER_HEIGHT,
         SLIDER_HEIGHT / 2,
       );
     }
 
-    this.volumeKnob.clear();
-    this.volumeKnob.fillStyle(0xffffff, 1);
-    this.volumeKnob.fillCircle(knobX, 32, SLIDER_KNOB_RADIUS);
-    this.volumeKnob.lineStyle(3, ICON_COLOR, 1);
-    this.volumeKnob.strokeCircle(knobX, 32, SLIDER_KNOB_RADIUS);
+    slider.knob.clear();
+    slider.knob.fillStyle(0xffffff, 1);
+    slider.knob.fillCircle(knobX, slider.y, SLIDER_KNOB_RADIUS);
+    slider.knob.lineStyle(3, ICON_COLOR, 1);
+    slider.knob.strokeCircle(knobX, slider.y, SLIDER_KNOB_RADIUS);
+    slider.valueText.setText(`${Math.round(volume * 100)}%`);
   }
 
   destroy({ stopAudio = !this.persistBetweenScenes } = {}) {
     this.destroyed = true;
+    this.unsubscribeAudioSettings?.();
     this.scene.sound.off(Phaser.Sound.Events.UNLOCKED, this.playWhenUnlocked);
     this.scene.input.off('pointerup', this.releaseVolumeDrag);
 

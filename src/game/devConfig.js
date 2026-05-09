@@ -1,4 +1,4 @@
-import { LEVELS } from '../data/levels.js';
+import { getLevels } from '../data/levelStore.js';
 
 const START_LEVEL_ENV_KEY = 'VITE_START_LEVEL';
 
@@ -14,7 +14,7 @@ export function resolveStartLevelIndex() {
   }
 
   const startLevel = Number(rawStartLevel);
-  const matchingLevelIndex = LEVELS.findIndex((level) => level.id === startLevel);
+  const matchingLevelIndex = getLevels().findIndex((level) => level.id === startLevel);
 
   if (!Number.isInteger(startLevel) || matchingLevelIndex === -1) {
     console.warn(

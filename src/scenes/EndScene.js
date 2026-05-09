@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
-import { LEVELS } from '../data/levels.js';
+import { getLevelCount } from '../data/levelStore.js';
 import { saveHighScore } from '../utils/storage.js';
 import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 
@@ -29,7 +29,7 @@ export class EndScene extends Phaser.Scene {
       .setStrokeStyle(4, 0xb4f0ff, 0.95);
 
     this.add
-      .text(GAME_WIDTH / 2, 180, `Alle ${LEVELS.length} Level geschafft!`, {
+      .text(GAME_WIDTH / 2, 180, `Alle ${getLevelCount()} Level geschafft!`, {
         fontFamily: 'Verdana, sans-serif',
         fontSize: '42px',
         color: '#ffffff',
@@ -58,7 +58,7 @@ export class EndScene extends Phaser.Scene {
       .text(
         GAME_WIDTH / 2,
         450,
-        `Checkpoint-Respawns, Bonus-Baelle und ${LEVELS.length} Level sind aktiv.`,
+        `Checkpoint-Respawns, Bonus-Baelle und ${getLevelCount()} Level sind aktiv.`,
         {
           fontFamily: 'Verdana, sans-serif',
           fontSize: '24px',

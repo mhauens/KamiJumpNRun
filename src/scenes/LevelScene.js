@@ -1,11 +1,32 @@
 import Phaser from 'phaser';
 import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
 import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
+import coinSfxUrl from '../../assets/shared/sfx/coin.ogg';
+import bossHittedSfxUrl from '../../assets/shared/sfx/boss_hitted.ogg';
+import jumpSfxUrl from '../../assets/shared/sfx/jump.ogg';
+import playerHittedSfxUrl from '../../assets/shared/sfx/player_hitted.ogg';
+import shotSfxUrl from '../../assets/shared/sfx/shot.ogg';
+import {
+  getBossRuntimeAtlasKeys,
+  loadBossAssetsForLevel,
+} from '../data/bossAssets.js';
 import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
-import { LEVELS } from '../data/levels.js';
+import { getLevel, getLevelCount, subscribeLevelDataUpdates } from '../data/levelStore.js';
 import { getNextRetrySoundConfig, rememberRetrySoundPlayback } from '../data/retrySounds.js';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
+import {
+  createRuntimeSpriteAtlas,
+  getAnimationFrame,
+  getLogicalTextureKey,
+  getTextureArgs,
+  setSpriteTexture,
+} from '../game/spriteAtlas.js';
 import { MusicControls } from '../ui/MusicControls.js';
+import {
+  AUDIO_CHANNELS,
+  getAudioChannelVolume,
+  subscribeAudioSettings,
+} from '../utils/audioSettings.js';
 import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 import { loadHighScore, saveHighScore } from '../utils/storage.js';
 
@@ -76,8 +97,18 @@ const CRIT_HIT_DISPLAY_WIDTH = 320;
 const CRIT_HIT_Y = 112;
 const LEVEL_MUSIC_KEY = 'kamis-world-level';
 const LEVEL_MUSIC_VOLUME = 0.05;
-const LEVEL_MUSIC_PANEL_WIDTH = 282;
+const LEVEL_MUSIC_PANEL_WIDTH = 424;
 const LEVEL_MUSIC_PANEL_MARGIN = 34;
+const COIN_SFX_KEY = 'coin-pickup-sfx';
+const COIN_SFX_VOLUME = 0.65;
+const JUMP_SFX_KEY = 'jump-sfx';
+const JUMP_SFX_VOLUME = 0.6;
+const BOSS_SHOT_SFX_KEY = 'boss-shot-sfx';
+const BOSS_SHOT_SFX_VOLUME = 0.55;
+const PLAYER_HITTED_SFX_KEY = 'player-hitted-sfx';
+const PLAYER_HITTED_SFX_VOLUME = 0.7;
+const BOSS_HITTED_SFX_KEY = 'boss-hitted-sfx';
+const BOSS_HITTED_SFX_VOLUME = 0.7;
 const BOSS_SPECIAL_ATTACK_REDUCTION_PER_BALL = 0.02;
 const PAINT_PUDDLE_LEVEL_IDS = new Set([1, 2]);
 const PAINT_PUDDLE_DISPLAY_WIDTH = 420;
@@ -127,7 +158,11 @@ export class LevelScene extends Phaser.Scene {
     this.score = data.score ?? 0;
     this.levelStartScore = data.levelStartScore ?? this.score;
     this.highScore = data.highScore ?? loadHighScore();
-    this.level = LEVELS[this.levelIndex];
+    this.level = getLevel(this.levelIndex);
+    if (!this.level) {
+      this.levelIndex = 0;
+      this.level = getLevel(this.levelIndex);
+    }
     this.respawnPoint = this.resolveRespawnPoint(this.level.spawn);
     this.levelComplete = false;
     this.isRespawning = false;
@@ -172,13 +207,30 @@ export class LevelScene extends Phaser.Scene {
     this.retrySelectionIndex = RETRY_RETRY_OPTION;
     this.lastBossSplashAudioKeyByPhase = {};
     this.activeRetrySound = null;
+    this.bossSplashSoundPool = new Map();
+    this.unsubscribeLevelDataUpdates = null;
+    this.unsubscribeAudioSettings = null;
+  }
+
+  preload() {
+    this.loadSfxAudio();
+    loadBossAssetsForLevel(this, this.level.id);
+    this.loadBossSplashAudioForCurrentLevel();
   }
 
   create() {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.stopBossSplashSound();
       this.stopRetrySound();
+      this.destroyBossSplashSoundPool();
+      this.unsubscribeLevelDataUpdates?.();
+      this.unsubscribeAudioSettings?.();
     });
+    this.watchDevLevelData();
+    this.watchAudioSettings();
+    this.configureLoadedBossTextures();
+    this.createLevelBossRuntimeAtlas();
+    this.createBossSplashSoundPool();
 
     this.createWorld();
     this.createPlatforms();
@@ -208,6 +260,141 @@ export class LevelScene extends Phaser.Scene {
       persistBetweenScenes: true,
     });
     this.musicControls.start();
+  }
+
+  loadBossSplashAudioForCurrentLevel() {
+    Object.values(BOSS_SPLASH_AUDIO[this.level.id] ?? {})
+      .flat()
+      .forEach((config) => {
+        if (!config.key || this.cache.audio.exists(config.key)) {
+          return;
+        }
+
+        this.load.audio(config.key, config.urls);
+      });
+  }
+
+  loadSfxAudio() {
+    if (!this.cache.audio.exists(COIN_SFX_KEY)) {
+      this.load.audio(COIN_SFX_KEY, coinSfxUrl);
+    }
+
+    if (!this.cache.audio.exists(JUMP_SFX_KEY)) {
+      this.load.audio(JUMP_SFX_KEY, jumpSfxUrl);
+    }
+
+    if (!this.cache.audio.exists(BOSS_SHOT_SFX_KEY)) {
+      this.load.audio(BOSS_SHOT_SFX_KEY, shotSfxUrl);
+    }
+
+    if (!this.cache.audio.exists(PLAYER_HITTED_SFX_KEY)) {
+      this.load.audio(PLAYER_HITTED_SFX_KEY, playerHittedSfxUrl);
+    }
+
+    if (!this.cache.audio.exists(BOSS_HITTED_SFX_KEY)) {
+      this.load.audio(BOSS_HITTED_SFX_KEY, bossHittedSfxUrl);
+    }
+  }
+
+  createBossSplashSoundPool() {
+    Object.values(BOSS_SPLASH_AUDIO[this.level.id] ?? {})
+      .flat()
+      .forEach((config) => {
+        if (
+          !config.key ||
+          this.bossSplashSoundPool.has(config.key) ||
+          !this.cache.audio.exists(config.key)
+        ) {
+          return;
+        }
+
+        const configVolume = config.volume ?? 1;
+        const sound = this.sound.add(config.key, {
+          volume: configVolume * 0.5 * getAudioChannelVolume(AUDIO_CHANNELS.voice),
+        });
+
+        sound.once(Phaser.Sound.Events.DESTROY, () => {
+          if (this.bossSplashSoundPool.get(config.key)?.sound === sound) {
+            this.bossSplashSoundPool.delete(config.key);
+          }
+        });
+
+        this.bossSplashSoundPool.set(config.key, {
+          sound,
+          configVolume,
+        });
+      });
+  }
+
+  destroyBossSplashSoundPool() {
+    this.bossSplashSoundPool.forEach(({ sound }) => {
+      if (sound.isPlaying || sound.isPaused) {
+        sound.stop();
+      }
+
+      sound.destroy();
+    });
+    this.bossSplashSoundPool.clear();
+  }
+
+  configureLoadedBossTextures() {
+    [
+      this.getBossKey('splashscreen'),
+      this.getBossKey('retry-splashscreen'),
+      `boss-${this.level.id}-2-splashscreen`,
+      `boss-${this.level.id}-2-retry-splashscreen`,
+    ].forEach((textureKey) => {
+      if (!this.textures.exists(textureKey)) {
+        return;
+      }
+
+      this.textures
+        .get(textureKey)
+        .setFilter(Phaser.Textures.FilterMode.LINEAR);
+    });
+  }
+
+  createLevelBossRuntimeAtlas() {
+    createRuntimeSpriteAtlas(this, getBossRuntimeAtlasKeys(this.level.id), { reset: false });
+  }
+
+  watchDevLevelData() {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    this.unsubscribeLevelDataUpdates = subscribeLevelDataUpdates(() => {
+      const nextLevel = getLevel(this.levelIndex);
+
+      if (!nextLevel) {
+        return;
+      }
+
+      this.scene.restart({
+        levelIndex: this.levelIndex,
+        score: this.levelStartScore,
+        levelStartScore: this.levelStartScore,
+        highScore: this.highScore,
+      });
+    });
+  }
+
+  watchAudioSettings() {
+    this.unsubscribeAudioSettings = subscribeAudioSettings(() => {
+      this.applyVoiceVolumes();
+    });
+  }
+
+  applyVoiceVolumes() {
+    const voiceVolume = getAudioChannelVolume(AUDIO_CHANNELS.voice);
+
+    this.bossSplashSoundPool.forEach(({ sound, configVolume }) => {
+      sound.setVolume(configVolume * 0.5 * voiceVolume);
+    });
+    this.activeBossSplashSound?.sound?.setVolume(
+      (this.activeBossSplashSound.configVolume ?? 1) * 0.5 * voiceVolume,
+    );
+    this.activeRetrySound?.setVolume(0.5 * voiceVolume);
   }
 
   ensureBossAnimations() {
@@ -320,11 +507,12 @@ export class LevelScene extends Phaser.Scene {
     });
 
     this.player = this.physics.add
-      .sprite(this.respawnPoint.x, this.respawnPoint.y, 'char-stand')
+      .sprite(this.respawnPoint.x, this.respawnPoint.y, ...getTextureArgs('char-stand'))
       .setOrigin(0.5, 1)
       .setScale(PLAYER_SCALE)
       .setCollideWorldBounds(true)
       .setDepth(10);
+    this.player.setData('logicalTextureKey', 'char-stand');
 
     this.player.setBounce(0);
     this.player.setDragX(1500);
@@ -355,16 +543,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.anims.create({
       key: 'player-walk',
-      frames: [
-        { key: 'char-walk-1' },
-        { key: 'char-walk-2' },
-        { key: 'char-walk-3' },
-        { key: 'char-walk-4' },
-        { key: 'char-walk-5' },
-        { key: 'char-walk-6' },
-        { key: 'char-walk-7' },
-        { key: 'char-walk-8' },
-      ],
+      frames: Array.from({ length: 8 }, (_, index) => getAnimationFrame(`char-walk-${index + 1}`)),
       frameRate: 10,
       repeat: -1,
     });
@@ -383,10 +562,11 @@ export class LevelScene extends Phaser.Scene {
   createPickupSet(entries, texture, value, scale, bossHpBonus, pickupType) {
     entries.forEach((entry) => {
       const pickup = this.collectibles
-        .create(entry.x, entry.y, texture)
+        .create(entry.x, entry.y, ...getTextureArgs(texture))
         .setScale(scale)
         .setDepth(8);
 
+      pickup.setData('logicalTextureKey', texture);
       pickup.body.setAllowGravity(false);
       pickup.body.setImmovable(true);
       pickup.setData('value', value);
@@ -413,7 +593,7 @@ export class LevelScene extends Phaser.Scene {
       const checkpoint = this.checkpoints.create(
         entry.x,
         entry.y + 56,
-        'checkpoint',
+        ...getTextureArgs('checkpoint'),
       );
 
       checkpoint
@@ -423,6 +603,7 @@ export class LevelScene extends Phaser.Scene {
         .setData('label', entry.label)
         .setData('activated', false)
         .setTint(index === 0 ? 0xffb39d : 0xffffff);
+      checkpoint.setData('logicalTextureKey', 'checkpoint');
 
       checkpoint.refreshBody();
       checkpoint.body.setSize(CHECKPOINT_TRIGGER_WIDTH, GAME_HEIGHT);
@@ -437,8 +618,9 @@ export class LevelScene extends Phaser.Scene {
     this.goal = this.physics.add.staticImage(
       this.level.goal.x,
       this.level.goal.y + this.level.goal.height,
-      'goal',
+      ...getTextureArgs('goal'),
     );
+    this.goal.setData('logicalTextureKey', 'goal');
 
     this.goal
       .setOrigin(0.5, 1)
@@ -455,11 +637,12 @@ export class LevelScene extends Phaser.Scene {
     this.bossScale = this.resolveBossScale(standKey);
 
     this.boss = this.physics.add
-      .sprite(bossConfig.spawn.x, this.getBossVisualY(standKey), standKey)
+      .sprite(bossConfig.spawn.x, this.getBossVisualY(standKey), ...getTextureArgs(standKey))
       .setOrigin(0.5, 1)
       .setScale(this.bossScale)
       .setCollideWorldBounds(false)
       .setDepth(9);
+    this.boss.setData('logicalTextureKey', standKey);
 
     this.boss.body.setAllowGravity(false);
     this.boss.body.setImmovable(true);
@@ -1097,6 +1280,7 @@ export class LevelScene extends Phaser.Scene {
 
     if ((Phaser.Input.Keyboard.JustDown(this.keys.jump) || this.gamepadInput?.actionJustPressed) && canJump) {
       this.player.setVelocityY(JUMP_VELOCITY);
+      this.playJumpSfx();
       jumpedThisFrame = true;
     }
 
@@ -1138,7 +1322,7 @@ export class LevelScene extends Phaser.Scene {
       this.player.play('player-walk', true);
     } else {
       this.player.stop();
-      this.player.setTexture(nextState === 'jump' ? 'char-jump' : 'char-stand');
+      setSpriteTexture(this.player, nextState === 'jump' ? 'char-jump' : 'char-stand');
     }
 
     this.configurePlayerBody();
@@ -1307,7 +1491,7 @@ export class LevelScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.player.setFlipX(false);
     this.player.stop();
-    this.player.setTexture('char-stand');
+    setSpriteTexture(this.player, 'char-stand');
     this.playerState = 'stand';
     this.configurePlayerBody();
   }
@@ -1324,7 +1508,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.body.setAllowGravity(false);
     this.boss.body.setImmovable(true);
     this.boss.setVelocity(0, 0);
-    this.boss.setTexture(standKey);
+    setSpriteTexture(this.boss, standKey);
     this.boss.setScale(this.bossScale);
     this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
     this.boss.setFlipX(true);
@@ -1334,8 +1518,13 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getBossVisualY(textureKey = this.boss.texture.key) {
+    const logicalTextureKey = typeof textureKey === 'string' &&
+      textureKey.startsWith('runtime-sprite-atlas')
+      ? getLogicalTextureKey(this.boss)
+      : textureKey;
+
     return this.level.boss.floorY +
-      this.getTextureBottomPadding(textureKey) * this.bossScale +
+      this.getTextureBottomPadding(logicalTextureKey) * this.bossScale +
       BOSS_FOOT_SINK;
   }
 
@@ -1579,20 +1768,32 @@ export class LevelScene extends Phaser.Scene {
 
     this.stopBossSplashSound();
 
-    const sound = this.sound.add(config.key, {
-      volume: (config.volume ?? 1) * 0.5,
+    const configVolume = config.volume ?? 1;
+    const pooledEntry = this.bossSplashSoundPool.get(config.key);
+    const sound = pooledEntry?.sound ?? this.sound.add(config.key, {
+      volume: configVolume * 0.5 * getAudioChannelVolume(AUDIO_CHANNELS.voice),
     });
+
+    sound.setVolume(configVolume * 0.5 * getAudioChannelVolume(AUDIO_CHANNELS.voice));
+    sound.off(Phaser.Sound.Events.COMPLETE);
 
     sound.once(Phaser.Sound.Events.COMPLETE, () => {
       if (this.activeBossSplashSound?.sound === sound) {
         this.activeBossSplashSound = null;
       }
 
-      sound.destroy();
+      if (!pooledEntry) {
+        sound.destroy();
+      }
     });
 
     sound.play();
-    this.activeBossSplashSound = { key: config.key, sound };
+    this.activeBossSplashSound = {
+      key: config.key,
+      sound,
+      configVolume,
+      pooled: Boolean(pooledEntry),
+    };
     this.lastBossSplashAudioKeyByPhase[this.bossPhase] = config.key;
   }
 
@@ -1606,7 +1807,7 @@ export class LevelScene extends Phaser.Scene {
     this.stopRetrySound();
 
     const sound = this.sound.add(config.key, {
-      volume: 0.5,
+      volume: 0.5 * getAudioChannelVolume(AUDIO_CHANNELS.voice),
     });
 
     sound.once(Phaser.Sound.Events.COMPLETE, () => {
@@ -1628,6 +1829,56 @@ export class LevelScene extends Phaser.Scene {
     rememberRetrySoundPlayback(config.key);
   }
 
+  playCoinSfx() {
+    if (this.sound.locked || !this.cache.audio.exists(COIN_SFX_KEY)) {
+      return;
+    }
+
+    this.sound.play(COIN_SFX_KEY, {
+      volume: COIN_SFX_VOLUME * getAudioChannelVolume(AUDIO_CHANNELS.sfx),
+    });
+  }
+
+  playJumpSfx() {
+    if (this.sound.locked || !this.cache.audio.exists(JUMP_SFX_KEY)) {
+      return;
+    }
+
+    this.sound.play(JUMP_SFX_KEY, {
+      volume: JUMP_SFX_VOLUME * getAudioChannelVolume(AUDIO_CHANNELS.sfx),
+    });
+  }
+
+  playBossShotSfx() {
+    if (this.sound.locked || !this.cache.audio.exists(BOSS_SHOT_SFX_KEY)) {
+      return;
+    }
+
+    this.sound.play(BOSS_SHOT_SFX_KEY, {
+      volume: BOSS_SHOT_SFX_VOLUME * getAudioChannelVolume(AUDIO_CHANNELS.sfx),
+    });
+  }
+
+  playPlayerHittedSfx() {
+    if (this.sound.locked || !this.cache.audio.exists(PLAYER_HITTED_SFX_KEY)) {
+      return;
+    }
+
+    this.sound.play(PLAYER_HITTED_SFX_KEY, {
+      volume: PLAYER_HITTED_SFX_VOLUME * getAudioChannelVolume(AUDIO_CHANNELS.sfx),
+    });
+  }
+
+  playBossHittedSfx() {
+    if (this.sound.locked || !this.cache.audio.exists(BOSS_HITTED_SFX_KEY)) {
+      return;
+    }
+
+    this.sound.play(BOSS_HITTED_SFX_KEY, {
+      volume: BOSS_HITTED_SFX_VOLUME * getAudioChannelVolume(AUDIO_CHANNELS.sfx),
+    });
+  }
+
   stopRetrySound() {
     const activeSound = this.activeRetrySound;
 
@@ -1645,7 +1896,8 @@ export class LevelScene extends Phaser.Scene {
   }
 
   stopBossSplashSound() {
-    const activeSound = this.activeBossSplashSound?.sound;
+    const activeEntry = this.activeBossSplashSound;
+    const activeSound = activeEntry?.sound;
 
     this.activeBossSplashSound = null;
 
@@ -1657,7 +1909,9 @@ export class LevelScene extends Phaser.Scene {
       activeSound.stop();
     }
 
-    activeSound.destroy();
+    if (!activeEntry.pooled) {
+      activeSound.destroy();
+    }
   }
 
   showBossSplash() {
@@ -2120,6 +2374,8 @@ export class LevelScene extends Phaser.Scene {
     const useCardSpread = this.shouldUseBossCardSpread() &&
       Math.random() <= this.getBossSpecialAttackChance(CARD_SPREAD_ATTACK_CHANCE);
 
+    this.playBossShotSfx();
+
     if (useCardSpread) {
       this.fireBossCardSpread(direction, bossConfig, textureKey);
       return;
@@ -2140,7 +2396,7 @@ export class LevelScene extends Phaser.Scene {
       .create(
         this.boss.x + direction * bossConfig.shotOffsetX,
         this.boss.y + bossConfig.shotOffsetY,
-        textureKey,
+        ...getTextureArgs(textureKey),
       )
       .setOrigin(0.5)
       .setScale(bossConfig.shotScale)
@@ -2157,6 +2413,7 @@ export class LevelScene extends Phaser.Scene {
     projectile.setData('spawnX', projectile.x);
     projectile.setData('range', bossConfig.projectileRange);
     projectile.setData('damage', bossConfig.damage);
+    projectile.setData('logicalTextureKey', textureKey);
 
     return projectile;
   }
@@ -2340,10 +2597,11 @@ export class LevelScene extends Phaser.Scene {
     const imageX = x + (source.width / 2 - contentCenterX) * scale;
     const imageY = platformTop - tuning.surfaceOffset + (source.height / 2 - bounds.y) * scale;
     const puddle = this.paintPuddles
-      .create(imageX, imageY, textureKey)
+      .create(imageX, imageY, ...getTextureArgs(textureKey))
       .setOrigin(0.5)
       .setDisplaySize(tuning.displayWidth, displayHeight)
       .setDepth(6);
+    puddle.setData('logicalTextureKey', textureKey);
 
     puddle.refreshBody();
 
@@ -2533,6 +2791,7 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.bossIsHit = true;
+    this.playBossHittedSfx();
     this.bossState = 'hit';
     this.boss.setVelocityX(0);
     this.player.setVelocityY(BOSS_HIT_BOUNCE);
@@ -2566,6 +2825,7 @@ export class LevelScene extends Phaser.Scene {
     const hit = this.resolveHitDamage(damage, this.getBossCritChance());
     this.playerHp = Math.max(0, this.playerHp - hit.damage);
     this.playerIsHit = true;
+    this.playPlayerHittedSfx();
     this.player.setVelocityX(0);
     this.player.stop();
     this.player.play(this.getPlayerHitBossKey(), true);
@@ -2616,7 +2876,7 @@ export class LevelScene extends Phaser.Scene {
 
     const sourceImage = this.textures.get('crit-hit').getSourceImage();
     this.critHitImage = this.add
-      .image(GAME_WIDTH / 2, CRIT_HIT_Y, 'crit-hit')
+      .image(GAME_WIDTH / 2, CRIT_HIT_Y, ...getTextureArgs('crit-hit'))
       .setScrollFactor(0)
       .setDepth(149)
       .setAlpha(0)
@@ -2673,7 +2933,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.stop();
     const defeatedKey = this.getBossKey('defeated');
     const defeatedScale = this.getBossDefeatedScale(defeatedKey);
-    this.boss.setTexture(defeatedKey);
+    setSpriteTexture(this.boss, defeatedKey);
     this.boss.setScale(
       defeatedScale * (this.getBossConfig().defeatedScaleXMultiplier ?? 1),
       defeatedScale,
@@ -2748,7 +3008,7 @@ export class LevelScene extends Phaser.Scene {
     }
     const standKey = this.getBossKey('stand');
     this.bossScale = this.resolveBossScale(standKey);
-    this.boss.setTexture(standKey);
+    setSpriteTexture(this.boss, standKey);
     this.boss.setScale(this.bossScale);
     this.boss.setPosition(this.level.boss.spawn.x, this.getBossVisualY(standKey));
     this.configureBossBody();
@@ -2839,6 +3099,8 @@ export class LevelScene extends Phaser.Scene {
 
     if (pickupType === 'ball') {
       this.levelBallsCollected += 1;
+    } else if (pickupType === 'coin') {
+      this.playCoinSfx();
     }
 
     pickup.disableBody(true, true);
@@ -2914,7 +3176,7 @@ export class LevelScene extends Phaser.Scene {
     this.time.delayedCall(1200, () => {
       const nextIndex = this.levelIndex + 1;
 
-      if (nextIndex < LEVELS.length) {
+      if (nextIndex < getLevelCount()) {
         this.scene.start('LevelScene', {
           levelIndex: nextIndex,
           score: this.score,
@@ -2954,7 +3216,7 @@ export class LevelScene extends Phaser.Scene {
     this.playerState = 'stand';
     this.lastGroundedAt = this.time.now;
     this.player.stop();
-    this.player.setTexture('char-stand');
+    setSpriteTexture(this.player, 'char-stand');
     this.configurePlayerBody();
     this.cameras.main.shake(150, 0.004);
     this.showToast(isManual ? 'Respawn' : `Fallstrafe -${lostCoins} Coins`);

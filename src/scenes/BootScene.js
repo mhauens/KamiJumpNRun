@@ -15,8 +15,9 @@ import critHitUrl from '../../assets/shared/crit_hit.webp';
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
-import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
+import { BOSS_ASSETS } from '../data/bossAssets.js';
 import { RETRY_SOUNDS } from '../data/retrySounds.js';
+import { createRuntimeSpriteAtlas } from '../game/spriteAtlas.js';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 210;
@@ -29,91 +30,12 @@ const BOSS_4_HIT_FRAME_OVERFLOW = 24;
 const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
-const BOSS_LEVEL_COUNT = 6;
 const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
   'player-hit-boss-6-source',
   'player-hit-boss-6-2-source',
 ]);
 const PLAYER_HIT_WIDE_FRAME_SCALE_MULTIPLIER = 1.06;
 const INTRO_MUSIC_KEY = 'kamis-world-intro';
-const assetUrls = import.meta.glob([
-  '../../assets/boss_*/*.webp',
-  '../../assets/boss_*/*.png',
-  '!../../assets/**/old/**',
-  '!../../assets/**/OLD/**',
-], {
-  eager: true,
-  import: 'default',
-  query: '?url',
-});
-
-function resolveAssetUrl(levelId, fileName) {
-  return assetUrls[`../../assets/boss_${levelId}/${fileName}`] ??
-    assetUrls[`../../assets/${fileName}`];
-}
-
-function resolveBossAsset(levelId, filePattern) {
-  const fileName = filePattern(levelId);
-  const fallbackFileName = filePattern(1);
-
-  return resolveAssetUrl(levelId, fileName) ?? resolveAssetUrl(1, fallbackFileName);
-}
-
-function resolveOptionalBossAsset(levelId, fileBaseName) {
-  return resolveAssetUrl(levelId, `${fileBaseName}.png`) ??
-    resolveAssetUrl(levelId, `${fileBaseName}.webp`);
-}
-
-const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) => {
-  const id = index + 1;
-  const phase2 = id === 6
-    ? {
-        splashscreen: resolveAssetUrl(id, `boss_${id}_splashscreen_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_splashscreen.webp`),
-        retrySplashscreen: resolveAssetUrl(id, `boss_${id}_retry_splashscreen_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_retry_splashscreen.webp`),
-        stand: resolveAssetUrl(id, `boss_${id}_stand_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_stand.webp`),
-        move: resolveAssetUrl(id, `boss_${id}_move_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_move.webp`),
-        hit: resolveAssetUrl(id, `boss_${id}_hit_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_hit.webp`),
-        attack: resolveAssetUrl(id, `boss_${id}_attack_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.webp`),
-        specialAttack: resolveAssetUrl(id, `boss_${id}_attack_2_special.webp`),
-        defeated: resolveAssetUrl(id, `boss_${id}_defeated_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
-        shot: resolveAssetUrl(id, `boss_${id}_shot_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
-        specialShot: resolveAssetUrl(id, `boss_${id}_shot_2_special.webp`),
-        puddle: resolveOptionalBossAsset(id, `boss_${id}_puddle_2`) ??
-          resolveOptionalBossAsset(id, `boss_${id}_puddle`),
-        charge: resolveOptionalBossAsset(id, `boss_${id}_charge_2`) ??
-          resolveOptionalBossAsset(id, `mainChar_${id}_charge_2`) ??
-          resolveOptionalBossAsset(id, `boss_${id}_charge`) ??
-          resolveOptionalBossAsset(id, `mainChar_${id}_charge`),
-        playerHit: resolveAssetUrl(id, `mainChar_${id}_hit_2.webp`) ??
-          resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
-      }
-    : null;
-
-  return {
-    id,
-    splashscreen: resolveBossAsset(id, (levelId) => `boss_${levelId}_splashscreen.webp`),
-    retrySplashscreen: resolveBossAsset(id, (levelId) => `boss_${levelId}_retry_splashscreen.webp`),
-    stand: resolveBossAsset(id, (levelId) => `boss_${levelId}_stand.webp`),
-    move: resolveBossAsset(id, (levelId) => `boss_${levelId}_move.webp`),
-    hit: resolveBossAsset(id, (levelId) => `boss_${levelId}_hit.webp`),
-    attack: resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.webp`),
-    defeated: resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
-    shot: resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
-    puddle: resolveOptionalBossAsset(id, `boss_${id}_puddle`),
-    charge: resolveOptionalBossAsset(id, `boss_${id}_charge`) ??
-      resolveOptionalBossAsset(id, `mainChar_${id}_charge`),
-    playerHit: resolveBossAsset(id, (levelId) => `mainChar_${levelId}_hit.webp`),
-    phase2,
-  };
-});
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -136,98 +58,22 @@ export class BootScene extends Phaser.Scene {
     this.load.image('start-screen', startScreenUrl);
     this.load.image('crit-hit', critHitUrl);
     this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
-    this.loadBossAssets();
-    this.loadBossAudio();
     this.loadRetryAudio();
 
     this.createLoadingLabel();
   }
 
   create() {
-    this.configureSplashscreenTextures();
     this.createCharacterWalkTextures();
     this.createGeneratedTextures();
+    this.createRuntimeAtlas();
 
     this.scene.start('StartScene');
-  }
-
-  loadBossAssets() {
-    BOSS_ASSETS.forEach((asset) => {
-      this.load.image(`boss-${asset.id}-splashscreen`, asset.splashscreen);
-      this.load.image(`boss-${asset.id}-retry-splashscreen`, asset.retrySplashscreen);
-      this.load.image(`boss-${asset.id}-stand`, asset.stand);
-      this.load.image(`boss-${asset.id}-move-source`, asset.move);
-      this.load.image(`boss-${asset.id}-hit-source`, asset.hit);
-      this.load.image(`boss-${asset.id}-attack-source`, asset.attack);
-      this.load.image(`boss-${asset.id}-defeated`, asset.defeated);
-      this.load.image(`boss-${asset.id}-shot`, asset.shot);
-      if (asset.puddle) {
-        this.load.image(`boss-${asset.id}-puddle`, asset.puddle);
-      }
-      if (asset.charge) {
-        this.load.image(`boss-${asset.id}-charge-source`, asset.charge);
-      }
-      this.load.image(`player-hit-boss-${asset.id}-source`, asset.playerHit);
-
-      if (asset.phase2) {
-        this.load.image(`boss-${asset.id}-2-splashscreen`, asset.phase2.splashscreen);
-        this.load.image(`boss-${asset.id}-2-retry-splashscreen`, asset.phase2.retrySplashscreen);
-        this.load.image(`boss-${asset.id}-2-stand`, asset.phase2.stand);
-        this.load.image(`boss-${asset.id}-2-move-source`, asset.phase2.move);
-        this.load.image(`boss-${asset.id}-2-hit-source`, asset.phase2.hit);
-        this.load.image(`boss-${asset.id}-2-attack-source`, asset.phase2.attack);
-        if (asset.phase2.specialAttack) {
-          this.load.image(`boss-${asset.id}-2-attack-special-source`, asset.phase2.specialAttack);
-        }
-        this.load.image(`boss-${asset.id}-2-defeated`, asset.phase2.defeated);
-        this.load.image(`boss-${asset.id}-2-shot`, asset.phase2.shot);
-        if (asset.phase2.specialShot) {
-          this.load.image(`boss-${asset.id}-2-shot-special`, asset.phase2.specialShot);
-        }
-        if (asset.phase2.puddle) {
-          this.load.image(`boss-${asset.id}-2-puddle`, asset.phase2.puddle);
-        }
-        if (asset.phase2.charge) {
-          this.load.image(`boss-${asset.id}-2-charge-source`, asset.phase2.charge);
-        }
-        this.load.image(`player-hit-boss-${asset.id}-2-source`, asset.phase2.playerHit);
-      }
-    });
-  }
-
-  loadBossAudio() {
-    Object.values(BOSS_SPLASH_AUDIO).forEach((phases) => {
-      Object.values(phases).flat().forEach((config) => {
-        this.load.audio(config.key, config.urls);
-      });
-    });
   }
 
   loadRetryAudio() {
     RETRY_SOUNDS.forEach((config) => {
       this.load.audio(config.key, config.urls);
-    });
-  }
-
-  configureSplashscreenTextures() {
-    BOSS_ASSETS.forEach((asset) => {
-      this.textures
-        .get(`boss-${asset.id}-splashscreen`)
-        .setFilter(Phaser.Textures.FilterMode.LINEAR);
-
-      this.textures
-        .get(`boss-${asset.id}-retry-splashscreen`)
-        .setFilter(Phaser.Textures.FilterMode.LINEAR);
-
-      if (asset.phase2) {
-        this.textures
-          .get(`boss-${asset.id}-2-splashscreen`)
-          .setFilter(Phaser.Textures.FilterMode.LINEAR);
-
-        this.textures
-          .get(`boss-${asset.id}-2-retry-splashscreen`)
-          .setFilter(Phaser.Textures.FilterMode.LINEAR);
-      }
     });
   }
 
@@ -1085,6 +931,20 @@ export class BootScene extends Phaser.Scene {
     this.createCheckpointTexture();
     this.createGoalTexture();
     this.createBossProjectileTexture();
+  }
+
+  createRuntimeAtlas() {
+    createRuntimeSpriteAtlas(this, [
+      'char-stand',
+      'char-jump',
+      ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `char-walk-${index + 1}`),
+      'coin',
+      'ball',
+      'checkpoint',
+      'goal',
+      'boss-projectile',
+      'crit-hit',
+    ], { reset: true });
   }
 
   createPlatformTexture() {
