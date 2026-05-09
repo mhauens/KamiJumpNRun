@@ -3099,7 +3099,9 @@ export class LevelScene extends Phaser.Scene {
 
     if (pickupType === 'ball') {
       this.levelBallsCollected += 1;
-    } else if (pickupType === 'coin') {
+    }
+
+    if (pickupType === 'coin' || pickupType === 'ball') {
       this.playCoinSfx();
     }
 
