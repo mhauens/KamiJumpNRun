@@ -69,8 +69,12 @@ export const BOSS_ASSETS = Array.from({ length: BOSS_LEVEL_COUNT }, (_, index) =
     move: resolveBossAsset(id, (levelId) => `boss_${levelId}_move.webp`),
     hit: resolveBossAsset(id, (levelId) => `boss_${levelId}_hit.webp`),
     attack: resolveBossAsset(id, (levelId) => `boss_${levelId}_attack.webp`),
+    specialAttack: resolveAssetUrl(id, `boss_${id}_attack_special.webp`) ??
+      resolveAssetUrl(id, `boss_${id}_attack_wall.webp`),
     defeated: resolveBossAsset(id, (levelId) => `boss_${levelId}_defeated.webp`),
     shot: resolveBossAsset(id, (levelId) => `boss_${levelId}_shot.webp`),
+    specialShot: resolveAssetUrl(id, `boss_${id}_shot_special.webp`) ??
+      resolveAssetUrl(id, `boss_${id}_shot_wall.webp`),
     puddle: resolveOptionalBossAsset(id, `boss_${id}_puddle`),
     charge: resolveOptionalBossAsset(id, `boss_${id}_charge`) ??
       resolveOptionalBossAsset(id, `mainChar_${id}_charge`),
@@ -104,8 +108,10 @@ export function loadBossAssetsForLevel(scene, levelId) {
   loadImageIfNeeded(scene, `boss-${asset.id}-move-source`, asset.move);
   loadImageIfNeeded(scene, `boss-${asset.id}-hit-source`, asset.hit);
   loadImageIfNeeded(scene, `boss-${asset.id}-attack-source`, asset.attack);
+  loadImageIfNeeded(scene, `boss-${asset.id}-attack-special-source`, asset.specialAttack);
   loadImageIfNeeded(scene, `boss-${asset.id}-defeated`, asset.defeated);
   loadImageIfNeeded(scene, `boss-${asset.id}-shot`, asset.shot);
+  loadImageIfNeeded(scene, `boss-${asset.id}-shot-special`, asset.specialShot);
   loadImageIfNeeded(scene, `boss-${asset.id}-puddle`, asset.puddle);
   loadImageIfNeeded(scene, `boss-${asset.id}-charge-source`, asset.charge);
   loadImageIfNeeded(scene, `player-hit-boss-${asset.id}-source`, asset.playerHit);
@@ -140,6 +146,7 @@ export function getBossRuntimeAtlasKeys(levelId) {
     `boss-${asset.id}-stand`,
     `boss-${asset.id}-defeated`,
     `boss-${asset.id}-shot`,
+    `boss-${asset.id}-shot-special`,
     `boss-${asset.id}-puddle`,
     ...(asset.phase2
       ? [

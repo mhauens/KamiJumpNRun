@@ -2216,14 +2216,18 @@ export class LevelScene extends Phaser.Scene {
   }
 
   resolveBossAttackConfig(bossConfig) {
-    const isSpecial = this.shouldUsePhaseTwoSpecialAttack(bossConfig);
+    const isSpecial = this.shouldUseBossSpecialAttack(bossConfig);
 
     return {
       ...bossConfig,
       animationKey: isSpecial ? this.getBossKey('attack-special') : this.getBossKey('attack'),
       projectileTextureKey: isSpecial ? this.getBossKey('shot-special') : this.getBossKey('shot'),
       shotOffsetX: isSpecial ? bossConfig.specialShotOffsetX ?? bossConfig.shotOffsetX : bossConfig.shotOffsetX,
+      shotOffsetY: isSpecial ? bossConfig.specialShotOffsetY ?? bossConfig.shotOffsetY : bossConfig.shotOffsetY,
       shotScale: isSpecial ? bossConfig.specialShotScale ?? bossConfig.shotScale : bossConfig.shotScale,
+      shotBodyWidth: isSpecial
+        ? bossConfig.specialShotBodyWidth ?? bossConfig.shotBodyWidth
+        : bossConfig.shotBodyWidth,
       shotBodyHeight: isSpecial
         ? bossConfig.specialShotBodyHeight ?? bossConfig.shotBodyHeight
         : bossConfig.shotBodyHeight,
@@ -2234,15 +2238,20 @@ export class LevelScene extends Phaser.Scene {
       damage: isSpecial
         ? bossConfig.specialAttackDamage ?? PHASE_TWO_SPECIAL_ATTACK_DAMAGE
         : bossConfig.damage,
+      projectileRange: isSpecial
+        ? bossConfig.specialProjectileRange ?? bossConfig.projectileRange
+        : bossConfig.projectileRange,
+      projectileSpeed: isSpecial
+        ? bossConfig.specialProjectileSpeed ?? bossConfig.projectileSpeed
+        : bossConfig.projectileSpeed,
       projectileFrame: isSpecial
         ? bossConfig.specialProjectileFrame ?? bossConfig.projectileFrame
         : bossConfig.projectileFrame,
     };
   }
 
-  shouldUsePhaseTwoSpecialAttack(bossConfig) {
-    return this.level.id === PHASE_TWO_BOSS_ID &&
-      this.bossPhase === 2 &&
+  shouldUseBossSpecialAttack(bossConfig) {
+    return Boolean(bossConfig.specialAttackChance ?? CARD_SPREAD_ATTACK_CHANCE) &&
       this.anims.exists(this.getBossKey('attack-special')) &&
       this.textures.exists(this.getBossKey('shot-special')) &&
       Math.random() <= this.getBossSpecialAttackChance(

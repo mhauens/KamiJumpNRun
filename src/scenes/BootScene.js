@@ -460,6 +460,7 @@ export class BootScene extends Phaser.Scene {
     const useWideAttackFrame = sourceKey === 'boss-2-attack-source' ||
       sourceKey === 'boss-3-attack-source' ||
       sourceKey === 'boss-4-attack-source' ||
+      sourceKey === 'boss-4-attack-special-source' ||
       sourceKey === 'boss-6-attack-source' ||
       sourceKey === 'boss-6-2-attack-source' ||
       sourceKey === 'boss-6-2-attack-special-source';
@@ -490,7 +491,11 @@ export class BootScene extends Phaser.Scene {
   }
 
   getBossFrameScale(sourceKey, sourceBounds, layout) {
-    if (sourceKey === 'boss-4-attack-source' || sourceKey.endsWith('-charge-source')) {
+    if (
+      sourceKey === 'boss-4-attack-source' ||
+      sourceKey === 'boss-4-attack-special-source' ||
+      sourceKey.endsWith('-charge-source')
+    ) {
       const frameBounds = layout.frameBoundsBySource[sourceKey] ?? [];
       const referenceHeight = Math.max(
         sourceBounds.height,
