@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
 import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
-import coinSfxUrl from '../../assets/shared/sfx/coin.ogg';
-import bossHittedSfxUrl from '../../assets/shared/sfx/boss_hitted.ogg';
-import jumpSfxUrl from '../../assets/shared/sfx/jump.ogg';
-import playerHittedSfxUrl from '../../assets/shared/sfx/player_hitted.ogg';
-import shotSfxUrl from '../../assets/shared/sfx/shot.ogg';
+import bossHittedSfxMp3Url from '../../assets/shared/sfx/boss_hitted.mp3';
+import bossHittedSfxOggUrl from '../../assets/shared/sfx/boss_hitted.ogg';
+import coinSfxMp3Url from '../../assets/shared/sfx/coin.mp3';
+import coinSfxOggUrl from '../../assets/shared/sfx/coin.ogg';
+import jumpSfxMp3Url from '../../assets/shared/sfx/jump.mp3';
+import jumpSfxOggUrl from '../../assets/shared/sfx/jump.ogg';
+import playerHittedSfxMp3Url from '../../assets/shared/sfx/player_hitted.mp3';
+import playerHittedSfxOggUrl from '../../assets/shared/sfx/player_hitted.ogg';
+import shotSfxMp3Url from '../../assets/shared/sfx/shot.mp3';
+import shotSfxOggUrl from '../../assets/shared/sfx/shot.ogg';
 import {
   getBossRuntimeAtlasKeys,
   loadBossAssetsForLevel,
@@ -276,23 +281,23 @@ export class LevelScene extends Phaser.Scene {
 
   loadSfxAudio() {
     if (!this.cache.audio.exists(COIN_SFX_KEY)) {
-      this.load.audio(COIN_SFX_KEY, coinSfxUrl);
+      this.load.audio(COIN_SFX_KEY, [coinSfxOggUrl, coinSfxMp3Url]);
     }
 
     if (!this.cache.audio.exists(JUMP_SFX_KEY)) {
-      this.load.audio(JUMP_SFX_KEY, jumpSfxUrl);
+      this.load.audio(JUMP_SFX_KEY, [jumpSfxOggUrl, jumpSfxMp3Url]);
     }
 
     if (!this.cache.audio.exists(BOSS_SHOT_SFX_KEY)) {
-      this.load.audio(BOSS_SHOT_SFX_KEY, shotSfxUrl);
+      this.load.audio(BOSS_SHOT_SFX_KEY, [shotSfxOggUrl, shotSfxMp3Url]);
     }
 
     if (!this.cache.audio.exists(PLAYER_HITTED_SFX_KEY)) {
-      this.load.audio(PLAYER_HITTED_SFX_KEY, playerHittedSfxUrl);
+      this.load.audio(PLAYER_HITTED_SFX_KEY, [playerHittedSfxOggUrl, playerHittedSfxMp3Url]);
     }
 
     if (!this.cache.audio.exists(BOSS_HITTED_SFX_KEY)) {
-      this.load.audio(BOSS_HITTED_SFX_KEY, bossHittedSfxUrl);
+      this.load.audio(BOSS_HITTED_SFX_KEY, [bossHittedSfxOggUrl, bossHittedSfxMp3Url]);
     }
   }
 
