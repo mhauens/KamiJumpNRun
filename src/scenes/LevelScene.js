@@ -2525,6 +2525,7 @@ export class LevelScene extends Phaser.Scene {
       ? Math.max(configuredBodyHeight, floorBodyBottom - bodyY)
       : configuredBodyHeight;
 
+    projectile.body.setSize(bodyWidth, bodyHeight);
     projectile.body.setOffset(
       bodyX,
       bodyY,
