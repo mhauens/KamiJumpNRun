@@ -222,8 +222,10 @@ export const LEVELS = [
             shotScale: 0.55,
             shotBodyWidth: 42,
             shotBodyHeight: 28,
-            defeatedScaleMultiplier: 0.95,
-            defeatedFootSink: 32,
+            scaleAnimationsToMove: ['attack', 'hit'],
+            defeatedScaleUsesFullFrame: true,
+            defeatedScaleMultiplier: 2.75,
+            defeatedFootSink: 24,
         },
     },
     {

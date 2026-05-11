@@ -1522,14 +1522,14 @@ export class LevelScene extends Phaser.Scene {
     this.configureBossBody();
   }
 
-  getBossVisualY(textureKey = this.boss.texture.key) {
+  getBossVisualY(textureKey = this.boss.texture.key, visualScale = this.boss?.scaleY ?? this.bossScale) {
     const logicalTextureKey = typeof textureKey === 'string' &&
       textureKey.startsWith('runtime-sprite-atlas')
       ? getLogicalTextureKey(this.boss)
       : textureKey;
 
     return this.level.boss.floorY +
-      this.getTextureBottomPadding(logicalTextureKey) * this.bossScale +
+      this.getTextureBottomPadding(logicalTextureKey) * visualScale +
       BOSS_FOOT_SINK;
   }
 
@@ -1547,6 +1547,48 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  setBossStateScale(scaleMultiplier = 1) {
+    this.boss.setScale(this.bossScale * scaleMultiplier);
+  }
+
+  setBossScaleForAnimation(textureKey) {
+    this.setBossStateScale(this.getBossAnimationScaleMultiplier(textureKey));
+  }
+
+  getBossAnimationScaleMultiplier(textureKey) {
+    const bossConfig = this.getBossConfig();
+    const kind = this.getBossTextureKind(textureKey);
+    const shouldMatchMove = bossConfig.scaleAnimationsToMove?.includes(kind);
+
+    if (!shouldMatchMove) {
+      return 1;
+    }
+
+    const moveKey = this.getBossKey('move');
+
+    if (!this.textures.exists(moveKey) || !this.textures.exists(textureKey)) {
+      return 1;
+    }
+
+    const moveHeight = this.getTextureContentBounds(moveKey).height;
+    const animationHeight = this.getTextureContentBounds(textureKey).height;
+
+    if (!moveHeight || !animationHeight) {
+      return 1;
+    }
+
+    return moveHeight / animationHeight;
+  }
+
+  getBossTextureKind(textureKey) {
+    const phaseSuffix = this.bossPhase === 2 ? '-2' : '';
+    const prefix = `boss-${this.level.id}${phaseSuffix}-`;
+
+    return textureKey.startsWith(prefix)
+      ? textureKey.slice(prefix.length)
+      : textureKey;
+  }
+
   getBossDefeatedScale(defeatedKey) {
     const bossConfig = this.getBossConfig();
 
@@ -1561,7 +1603,10 @@ export class LevelScene extends Phaser.Scene {
     }
 
     const playerVisibleHeight = this.getTextureContentBounds('char-stand').height * PLAYER_SCALE;
-    const defeatedVisibleHeight = this.getTextureContentBounds(defeatedKey).height;
+    const defeatedTexture = this.textures.get(defeatedKey).getSourceImage();
+    const defeatedVisibleHeight = bossConfig.defeatedScaleUsesFullFrame
+      ? defeatedTexture.height
+      : this.getTextureContentBounds(defeatedKey).height;
 
     return (playerVisibleHeight / defeatedVisibleHeight) * bossConfig.defeatedScaleMultiplier;
   }
@@ -2050,6 +2095,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.boss.setVelocityX(this.bossDirection * bossConfig.speed);
     this.boss.setFlipX(this.bossDirection < 0);
+    this.setBossStateScale();
     this.boss.play(this.getBossKey('move'), true);
     this.alignBossToFloor();
   }
@@ -2202,6 +2248,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossState = 'attack';
     this.boss.setVelocityX(0);
     this.boss.setFlipX(this.player.x < this.boss.x);
+    this.setBossScaleForAnimation(attackConfig.animationKey);
     this.setBossAnimationTimeScale(1);
     this.boss.play(attackConfig.animationKey, true);
     this.alignBossToFloor();
@@ -2809,6 +2856,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossState = 'hit';
     this.boss.setVelocityX(0);
     this.player.setVelocityY(BOSS_HIT_BOUNCE);
+    this.setBossScaleForAnimation(this.getBossKey('hit'));
     this.setBossAnimationTimeScale(1);
     this.boss.play(this.getBossKey('hit'), true);
     this.alignBossToFloor();
@@ -2826,6 +2874,8 @@ export class LevelScene extends Phaser.Scene {
     this.time.delayedCall(BOSS_HIT_LOCK_MS, () => {
       this.bossIsHit = false;
       if (this.bossFightActive && !this.bossDefeated) {
+        this.setBossStateScale();
+        this.alignBossToFloor();
         this.bossState = 'patrol';
       }
     });

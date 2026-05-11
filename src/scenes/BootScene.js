@@ -1033,20 +1033,45 @@ export class BootScene extends Phaser.Scene {
       return;
     }
 
-    const graphics = this.make.graphics({ add: false });
-    graphics.fillStyle(0xffffff, 1);
-    graphics.fillCircle(20, 20, 18);
-    graphics.fillStyle(0xe34d4d, 1);
-    graphics.fillCircle(20, 14, 16);
-    graphics.fillStyle(0x101820, 1);
-    graphics.fillRect(4, 18, 32, 4);
-    graphics.fillCircle(20, 20, 6);
-    graphics.fillStyle(0xffffff, 1);
-    graphics.fillCircle(20, 20, 3);
-    graphics.lineStyle(3, 0x101820, 1);
-    graphics.strokeCircle(20, 20, 18);
-    graphics.generateTexture('ball', 40, 40);
-    graphics.destroy();
+    const canvas = document.createElement('canvas');
+    canvas.width = 40;
+    canvas.height = 40;
+
+    const context = canvas.getContext('2d');
+    const center = 20;
+    const outerRadius = 18;
+    const innerRadius = 14.5;
+
+    context.imageSmoothingEnabled = true;
+
+    context.fillStyle = '#101820';
+    context.beginPath();
+    context.arc(center, center, outerRadius, 0, Math.PI * 2);
+    context.fill();
+
+    context.save();
+    context.beginPath();
+    context.arc(center, center, innerRadius, 0, Math.PI * 2);
+    context.clip();
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(center - innerRadius, center - innerRadius, innerRadius * 2, innerRadius * 2);
+    context.fillStyle = '#e34d4d';
+    context.fillRect(center - innerRadius, center - innerRadius, innerRadius * 2, innerRadius);
+    context.restore();
+
+    context.fillStyle = '#101820';
+    context.fillRect(5, 18, 30, 4);
+    context.beginPath();
+    context.arc(center, center, 7, 0, Math.PI * 2);
+    context.fill();
+
+    context.fillStyle = '#ffffff';
+    context.beginPath();
+    context.arc(center, center, 3.4, 0, Math.PI * 2);
+    context.fill();
+
+    this.textures.addCanvas('ball', canvas);
   }
 
   createCheckpointTexture() {
