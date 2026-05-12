@@ -32,6 +32,7 @@ import {
   getAudioChannelVolume,
   subscribeAudioSettings,
 } from '../utils/audioSettings.js';
+import { FullscreenButton } from '../ui/FullscreenButton.js';
 import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 import { loadHighScore, saveHighScore } from '../utils/storage.js';
 
@@ -52,6 +53,20 @@ const HUD_PANEL_WIDTH = 370;
 const HUD_PANEL_HEIGHT = 146;
 const HUD_TEXT_X = 34;
 const HUD_HELP_WRAP_WIDTH = HUD_PANEL_WIDTH - 32;
+const TOUCH_CONTROLS_DEPTH = 130;
+const TOUCH_CONTROLS_IDLE_ALPHA = 0.56;
+const TOUCH_CONTROLS_ACTIVE_ALPHA = 0.88;
+const TOUCH_STICK_X = 158;
+const TOUCH_STICK_Y = GAME_HEIGHT - 124;
+const TOUCH_STICK_BASE_RADIUS = 74;
+const TOUCH_STICK_THUMB_RADIUS = 34;
+const TOUCH_STICK_HIT_RADIUS = 118;
+const TOUCH_STICK_MAX_DISTANCE = 58;
+const TOUCH_STICK_DEADZONE = 22;
+const TOUCH_JUMP_X = GAME_WIDTH - 134;
+const TOUCH_JUMP_Y = GAME_HEIGHT - 124;
+const TOUCH_JUMP_RADIUS = 68;
+const TOUCH_JUMP_HIT_RADIUS = 90;
 const BOSS_FOOT_SINK = 4;
 const BOSS_SCALE_MULTIPLIER = 1.22;
 const BOSS_BODY_WIDTH_RATIO = 0.62;
@@ -104,6 +119,7 @@ const LEVEL_MUSIC_KEY = 'kamis-world-level';
 const LEVEL_MUSIC_VOLUME = 0.05;
 const LEVEL_MUSIC_PANEL_WIDTH = 424;
 const LEVEL_MUSIC_PANEL_MARGIN = 34;
+const FULLSCREEN_BUTTON_GAP = 10;
 const COIN_SFX_KEY = 'coin-pickup-sfx';
 const COIN_SFX_VOLUME = 0.65;
 const JUMP_SFX_KEY = 'jump-sfx';
@@ -209,6 +225,10 @@ export class LevelScene extends Phaser.Scene {
     this.nextBossDodgeAt = 0;
     this.gamepadButtons = {};
     this.gamepadInput = null;
+    this.touchInput = this.createTouchInputState();
+    this.touchControlElements = [];
+    this.touchControlsVisible = false;
+    this.touchControlsSuppressedByHardwareInput = false;
     this.retrySelectionIndex = RETRY_RETRY_OPTION;
     this.lastBossSplashAudioKeyByPhase = {};
     this.activeRetrySound = null;
@@ -223,10 +243,21 @@ export class LevelScene extends Phaser.Scene {
     this.loadBossSplashAudioForCurrentLevel();
   }
 
+  createTouchInputState() {
+    return {
+      left: false,
+      right: false,
+      jumpJustPressed: false,
+      stickPointerId: null,
+      jumpPointerId: null,
+    };
+  }
+
   create() {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.stopBossSplashSound();
       this.stopRetrySound();
+      this.destroyTouchControls();
       this.destroyBossSplashSoundPool();
       this.unsubscribeLevelDataUpdates?.();
       this.unsubscribeAudioSettings?.();
@@ -247,6 +278,8 @@ export class LevelScene extends Phaser.Scene {
     this.createHud();
     this.createBossRetryUi();
     this.createLevelMusicControls();
+    this.createFullscreenButton();
+    this.createTouchControls();
     this.configureCollisions();
     this.configureCamera();
     refreshGamepads(this);
@@ -265,6 +298,357 @@ export class LevelScene extends Phaser.Scene {
       persistBetweenScenes: true,
     });
     this.musicControls.start();
+  }
+
+  createFullscreenButton() {
+    this.fullscreenButton = new FullscreenButton(this, {
+      x: GAME_WIDTH -
+        LEVEL_MUSIC_PANEL_MARGIN -
+        FullscreenButton.size * 2 -
+        FULLSCREEN_BUTTON_GAP,
+      y: LEVEL_MUSIC_PANEL_MARGIN + 4,
+      depth: 181,
+    });
+    this.fullscreenButton.start();
+  }
+
+  createTouchControls() {
+    if (!this.supportsTouchControls()) {
+      return;
+    }
+
+    this.touchInput = this.createTouchInputState();
+    this.touchControlElements = [];
+
+    this.touchStickBase = this.add.graphics()
+      .setScrollFactor(0)
+      .setDepth(TOUCH_CONTROLS_DEPTH)
+      .setAlpha(TOUCH_CONTROLS_IDLE_ALPHA);
+    this.drawTouchStickBase(this.touchStickBase);
+
+    this.touchStickThumb = this.add.graphics()
+      .setPosition(TOUCH_STICK_X, TOUCH_STICK_Y)
+      .setScrollFactor(0)
+      .setDepth(TOUCH_CONTROLS_DEPTH + 1)
+      .setAlpha(TOUCH_CONTROLS_IDLE_ALPHA);
+    this.drawTouchStickThumb(this.touchStickThumb);
+
+    this.touchStickZone = this.add
+      .zone(
+        TOUCH_STICK_X,
+        TOUCH_STICK_Y,
+        TOUCH_STICK_HIT_RADIUS * 2,
+        TOUCH_STICK_HIT_RADIUS * 2,
+      )
+      .setScrollFactor(0)
+      .setDepth(TOUCH_CONTROLS_DEPTH + 2)
+      .setInteractive(
+        new Phaser.Geom.Circle(
+          TOUCH_STICK_HIT_RADIUS,
+          TOUCH_STICK_HIT_RADIUS,
+          TOUCH_STICK_HIT_RADIUS,
+        ),
+        Phaser.Geom.Circle.Contains,
+      );
+
+    this.touchJumpBase = this.add.graphics()
+      .setScrollFactor(0)
+      .setDepth(TOUCH_CONTROLS_DEPTH)
+      .setAlpha(TOUCH_CONTROLS_IDLE_ALPHA);
+    this.drawTouchJumpButton(this.touchJumpBase);
+
+    this.touchJumpIcon = this.add.graphics()
+      .setScrollFactor(0)
+      .setDepth(TOUCH_CONTROLS_DEPTH + 1)
+      .setAlpha(TOUCH_CONTROLS_IDLE_ALPHA);
+    this.drawTouchJumpIcon(this.touchJumpIcon);
+
+    this.touchJumpZone = this.add
+      .zone(
+        TOUCH_JUMP_X,
+        TOUCH_JUMP_Y,
+        TOUCH_JUMP_HIT_RADIUS * 2,
+        TOUCH_JUMP_HIT_RADIUS * 2,
+      )
+      .setScrollFactor(0)
+      .setDepth(TOUCH_CONTROLS_DEPTH + 2)
+      .setInteractive(
+        new Phaser.Geom.Circle(
+          TOUCH_JUMP_HIT_RADIUS,
+          TOUCH_JUMP_HIT_RADIUS,
+          TOUCH_JUMP_HIT_RADIUS,
+        ),
+        Phaser.Geom.Circle.Contains,
+      );
+
+    this.touchControlElements.push(
+      this.touchStickBase,
+      this.touchStickThumb,
+      this.touchStickZone,
+      this.touchJumpBase,
+      this.touchJumpIcon,
+      this.touchJumpZone,
+    );
+
+    this.touchStickZone.on('pointerdown', this.handleTouchStickDown, this);
+    this.touchJumpZone.on('pointerdown', this.handleTouchJumpDown, this);
+
+    this.touchPointerMoveHandler = (pointer) => this.handleTouchPointerMove(pointer);
+    this.touchPointerUpHandler = (pointer) => this.handleTouchPointerUp(pointer);
+    this.touchPointerDownHandler = (pointer) => this.handleGlobalTouchPointerDown(pointer);
+    this.clearTouchPointerHandler = () => this.clearTouchInput();
+
+    this.input.on('pointerdown', this.touchPointerDownHandler);
+    this.input.on('pointermove', this.touchPointerMoveHandler);
+    this.input.on('pointerup', this.touchPointerUpHandler);
+    this.input.on('pointerupoutside', this.touchPointerUpHandler);
+    this.input.on('gameout', this.clearTouchPointerHandler);
+
+    this.setTouchControlsVisible(this.shouldShowTouchControls());
+  }
+
+  supportsTouchControls() {
+    const maxTouchPoints = typeof navigator !== 'undefined'
+      ? navigator.maxTouchPoints ?? 0
+      : 0;
+
+    return maxTouchPoints > 0 || Boolean(this.sys.game.device.input.touch);
+  }
+
+  shouldShowTouchControls() {
+    return this.supportsTouchControls() &&
+      !this.touchControlsSuppressedByHardwareInput &&
+      !this.levelComplete &&
+      !this.awaitingBossRetry &&
+      !this.bossIntroActive &&
+      !this.bossCountdownActive;
+  }
+
+  drawTouchStickBase(graphics) {
+    graphics.clear();
+    graphics.fillStyle(0x07182b, 0.44);
+    graphics.fillCircle(TOUCH_STICK_X, TOUCH_STICK_Y, TOUCH_STICK_BASE_RADIUS);
+    graphics.lineStyle(4, 0xffffff, 0.54);
+    graphics.strokeCircle(TOUCH_STICK_X, TOUCH_STICK_Y, TOUCH_STICK_BASE_RADIUS);
+    graphics.lineStyle(2, 0x9ce7ff, 0.65);
+    graphics.strokeCircle(TOUCH_STICK_X, TOUCH_STICK_Y, TOUCH_STICK_BASE_RADIUS - 15);
+  }
+
+  drawTouchStickThumb(graphics) {
+    graphics.clear();
+    graphics.fillStyle(0xffffff, 0.78);
+    graphics.fillCircle(0, 0, TOUCH_STICK_THUMB_RADIUS);
+    graphics.fillStyle(0x7ed2ff, 0.28);
+    graphics.fillCircle(0, 0, TOUCH_STICK_THUMB_RADIUS - 10);
+    graphics.lineStyle(3, 0x07182b, 0.36);
+    graphics.strokeCircle(0, 0, TOUCH_STICK_THUMB_RADIUS);
+  }
+
+  drawTouchJumpButton(graphics) {
+    graphics.clear();
+    graphics.fillStyle(0x07182b, 0.44);
+    graphics.fillCircle(TOUCH_JUMP_X, TOUCH_JUMP_Y, TOUCH_JUMP_RADIUS);
+    graphics.lineStyle(4, 0xffffff, 0.54);
+    graphics.strokeCircle(TOUCH_JUMP_X, TOUCH_JUMP_Y, TOUCH_JUMP_RADIUS);
+    graphics.fillStyle(0xffef98, 0.2);
+    graphics.fillCircle(TOUCH_JUMP_X, TOUCH_JUMP_Y, TOUCH_JUMP_RADIUS - 18);
+  }
+
+  drawTouchJumpIcon(graphics) {
+    graphics.clear();
+    graphics.lineStyle(9, 0xffffff, 0.86);
+    graphics.beginPath();
+    graphics.moveTo(TOUCH_JUMP_X - 28, TOUCH_JUMP_Y + 8);
+    graphics.lineTo(TOUCH_JUMP_X, TOUCH_JUMP_Y - 26);
+    graphics.lineTo(TOUCH_JUMP_X + 28, TOUCH_JUMP_Y + 8);
+    graphics.strokePath();
+    graphics.lineBetween(TOUCH_JUMP_X, TOUCH_JUMP_Y - 22, TOUCH_JUMP_X, TOUCH_JUMP_Y + 32);
+  }
+
+  handleTouchStickDown(pointer, localX, localY, event) {
+    event?.stopPropagation();
+
+    if (!this.touchInput || this.touchInput.stickPointerId !== null) {
+      return;
+    }
+
+    this.touchInput.stickPointerId = pointer.id;
+    this.setTouchStickActive(true);
+    this.updateTouchStickFromPointer(pointer);
+  }
+
+  handleTouchJumpDown(pointer, localX, localY, event) {
+    event?.stopPropagation();
+
+    if (!this.touchInput || this.touchInput.jumpPointerId !== null) {
+      return;
+    }
+
+    this.touchInput.jumpPointerId = pointer.id;
+    this.touchInput.jumpJustPressed = true;
+    this.setTouchJumpActive(true);
+  }
+
+  handleGlobalTouchPointerDown(pointer) {
+    if (this.isTouchPointer(pointer)) {
+      this.setTouchControlsSuppressedByHardwareInput(false);
+    }
+  }
+
+  isTouchPointer(pointer) {
+    return pointer?.event?.pointerType === 'touch' ||
+      pointer?.event?.type?.startsWith('touch');
+  }
+
+  handleTouchPointerMove(pointer) {
+    if (!this.touchInput || pointer.id !== this.touchInput.stickPointerId) {
+      return;
+    }
+
+    this.updateTouchStickFromPointer(pointer);
+  }
+
+  handleTouchPointerUp(pointer) {
+    if (!this.touchInput) {
+      return;
+    }
+
+    if (pointer.id === this.touchInput.stickPointerId) {
+      this.touchInput.stickPointerId = null;
+      this.touchInput.left = false;
+      this.touchInput.right = false;
+      this.touchStickThumb?.setPosition(TOUCH_STICK_X, TOUCH_STICK_Y);
+      this.setTouchStickActive(false);
+    }
+
+    if (pointer.id === this.touchInput.jumpPointerId) {
+      this.touchInput.jumpPointerId = null;
+      this.setTouchJumpActive(false);
+    }
+  }
+
+  updateTouchStickFromPointer(pointer) {
+    const deltaX = pointer.x - TOUCH_STICK_X;
+    const deltaY = pointer.y - TOUCH_STICK_Y;
+    const distance = Math.min(
+      TOUCH_STICK_MAX_DISTANCE,
+      Math.sqrt(deltaX * deltaX + deltaY * deltaY),
+    );
+    const angle = Math.atan2(deltaY, deltaX);
+    const thumbX = distance > 0 ? Math.cos(angle) * distance : 0;
+    const thumbY = distance > 0 ? Math.sin(angle) * distance : 0;
+
+    this.touchStickThumb?.setPosition(TOUCH_STICK_X + thumbX, TOUCH_STICK_Y + thumbY);
+    this.touchInput.left = thumbX < -TOUCH_STICK_DEADZONE;
+    this.touchInput.right = thumbX > TOUCH_STICK_DEADZONE;
+  }
+
+  setTouchStickActive(active) {
+    const alpha = active ? TOUCH_CONTROLS_ACTIVE_ALPHA : TOUCH_CONTROLS_IDLE_ALPHA;
+
+    this.touchStickBase?.setAlpha(alpha);
+    this.touchStickThumb?.setAlpha(alpha);
+  }
+
+  setTouchJumpActive(active) {
+    const alpha = active ? TOUCH_CONTROLS_ACTIVE_ALPHA : TOUCH_CONTROLS_IDLE_ALPHA;
+
+    this.touchJumpBase?.setAlpha(alpha);
+    this.touchJumpIcon?.setAlpha(alpha);
+  }
+
+  clearTouchInput() {
+    this.touchInput = this.createTouchInputState();
+    this.touchStickThumb?.setPosition(TOUCH_STICK_X, TOUCH_STICK_Y);
+    this.setTouchStickActive(false);
+    this.setTouchJumpActive(false);
+  }
+
+  setTouchControlsVisible(visible) {
+    if (!this.touchControlElements?.length || this.touchControlsVisible === visible) {
+      return;
+    }
+
+    this.touchControlsVisible = visible;
+    this.touchControlElements.forEach((element) => {
+      element.setVisible(visible);
+
+      if (element.input) {
+        element.input.enabled = visible;
+      }
+    });
+
+    if (!visible) {
+      this.clearTouchInput();
+    }
+  }
+
+  updateTouchControlsVisibility() {
+    if (!this.touchControlElements?.length) {
+      return;
+    }
+
+    this.setTouchControlsVisible(this.shouldShowTouchControls());
+  }
+
+  setTouchControlsSuppressedByHardwareInput(suppressed) {
+    if (this.touchControlsSuppressedByHardwareInput === suppressed) {
+      return;
+    }
+
+    this.touchControlsSuppressedByHardwareInput = suppressed;
+    this.updateTouchControlsVisibility();
+  }
+
+  suppressTouchControlsForKeyboardInput() {
+    if (!this.supportsTouchControls()) {
+      return;
+    }
+
+    this.setTouchControlsSuppressedByHardwareInput(true);
+  }
+
+  consumeTouchJumpPress() {
+    const jumpJustPressed = Boolean(this.touchInput?.jumpJustPressed);
+
+    if (this.touchInput) {
+      this.touchInput.jumpJustPressed = false;
+    }
+
+    return jumpJustPressed;
+  }
+
+  destroyTouchControls() {
+    if (this.touchStickZone) {
+      this.touchStickZone.off('pointerdown', this.handleTouchStickDown, this);
+    }
+
+    if (this.touchJumpZone) {
+      this.touchJumpZone.off('pointerdown', this.handleTouchJumpDown, this);
+    }
+
+    if (this.touchPointerMoveHandler) {
+      this.input.off('pointermove', this.touchPointerMoveHandler);
+    }
+
+    if (this.touchPointerDownHandler) {
+      this.input.off('pointerdown', this.touchPointerDownHandler);
+    }
+
+    if (this.touchPointerUpHandler) {
+      this.input.off('pointerup', this.touchPointerUpHandler);
+      this.input.off('pointerupoutside', this.touchPointerUpHandler);
+    }
+
+    if (this.clearTouchPointerHandler) {
+      this.input.off('gameout', this.clearTouchPointerHandler);
+    }
+
+    this.touchControlElements = [];
+    this.touchPointerDownHandler = null;
+    this.touchPointerMoveHandler = null;
+    this.touchPointerUpHandler = null;
+    this.clearTouchPointerHandler = null;
   }
 
   loadBossSplashAudioForCurrentLevel() {
@@ -699,7 +1083,7 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(101);
 
     this.helpText = this.add
-      .text(HUD_TEXT_X, 108, 'A/D, Pfeile, Stick oder D-Pad bewegen  Space/A springt  R/Start respawn', {
+      .text(HUD_TEXT_X, 108, 'A/D, Pfeile, Stick, D-Pad oder Touch bewegen  Space/A/Touch springt  R/Start respawn', {
         fontFamily: 'Verdana, sans-serif',
         fontSize: '14px',
         color: '#ffffff',
@@ -1169,6 +1553,7 @@ export class LevelScene extends Phaser.Scene {
   update() {
     this.updateLevelMusicPause();
     this.updateLevelHudVisibility();
+    this.updateTouchControlsVisibility();
     this.gamepadInput = readGamepadInput(this, this.gamepadButtons);
     this.gamepadButtons = this.gamepadInput.buttons;
 
@@ -1182,7 +1567,13 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.keys.restart) || this.gamepadInput.restartJustPressed) {
+    const keyboardRestartPressed = Phaser.Input.Keyboard.JustDown(this.keys.restart);
+
+    if (keyboardRestartPressed) {
+      this.suppressTouchControlsForKeyboardInput();
+    }
+
+    if (keyboardRestartPressed || this.gamepadInput.restartJustPressed) {
       this.respawnPlayer(true);
       return;
     }
@@ -1258,6 +1649,7 @@ export class LevelScene extends Phaser.Scene {
 
     if (this.bossIntroActive || this.bossCountdownActive || this.awaitingBossRetry || this.playerIsHit) {
       this.player.setVelocityX(0);
+      this.consumeTouchJumpPress();
       return;
     }
 
@@ -1268,8 +1660,21 @@ export class LevelScene extends Phaser.Scene {
       (groundedNow || this.time.now - this.lastGroundedAt <= GROUNDED_GRACE_MS);
     let jumpedThisFrame = false;
 
-    const movingLeft = this.keys.left.isDown || this.keys.leftArrow.isDown || this.gamepadInput?.left;
-    const movingRight = this.keys.right.isDown || this.keys.rightArrow.isDown || this.gamepadInput?.right;
+    const keyboardLeft = this.keys.left.isDown || this.keys.leftArrow.isDown;
+    const keyboardRight = this.keys.right.isDown || this.keys.rightArrow.isDown;
+    const keyboardJumpJustPressed = Phaser.Input.Keyboard.JustDown(this.keys.jump);
+
+    if (keyboardLeft || keyboardRight || keyboardJumpJustPressed) {
+      this.suppressTouchControlsForKeyboardInput();
+    }
+
+    const movingLeft = keyboardLeft ||
+      this.gamepadInput?.left ||
+      this.touchInput?.left;
+    const movingRight = keyboardRight ||
+      this.gamepadInput?.right ||
+      this.touchInput?.right;
+    const touchJumpJustPressed = this.consumeTouchJumpPress();
 
     const playerSpeed = this.getPlayerSpeed();
 
@@ -1283,7 +1688,11 @@ export class LevelScene extends Phaser.Scene {
       this.player.setVelocityX(0);
     }
 
-    if ((Phaser.Input.Keyboard.JustDown(this.keys.jump) || this.gamepadInput?.actionJustPressed) && canJump) {
+    if ((
+      keyboardJumpJustPressed ||
+      this.gamepadInput?.actionJustPressed ||
+      touchJumpJustPressed
+    ) && canJump) {
       this.player.setVelocityY(JUMP_VELOCITY);
       this.playJumpSfx();
       jumpedThisFrame = true;

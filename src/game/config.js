@@ -4,15 +4,10 @@ import { BootScene } from '../scenes/BootScene.js';
 import { StartScene } from '../scenes/StartScene.js';
 import { LevelScene } from '../scenes/LevelScene.js';
 import { EndScene } from '../scenes/EndScene.js';
-
-const isAppleTouchDevice = typeof navigator !== 'undefined' &&
-  (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  );
+import { isAppleTouchDevice } from '../utils/device.js';
 
 export const gameConfig = {
-  type: isAppleTouchDevice ? Phaser.CANVAS : Phaser.AUTO,
+  type: isAppleTouchDevice() ? Phaser.CANVAS : Phaser.AUTO,
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: '#7ed2ff',
@@ -27,6 +22,7 @@ export const gameConfig = {
   },
   input: {
     gamepad: true,
+    activePointers: 4,
   },
   scale: {
     mode: Phaser.Scale.FIT,
