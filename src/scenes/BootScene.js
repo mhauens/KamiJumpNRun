@@ -33,7 +33,8 @@ const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
 const TREE_HIT_ANIMATION_FRAME_RATE = 10;
-const TREE_HIT_FRAME_SCALE_MULTIPLIER = 0.82;
+const TREE_HIT_FRAME_SCALE_MULTIPLIER = 0.92;
+const TREE_HIT_FRAME_MAX_WIDTH_MULTIPLIER = 1.84;
 const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
   'player-hit-boss-6-source',
   'player-hit-boss-6-2-source',
@@ -1091,7 +1092,10 @@ export class BootScene extends Phaser.Scene {
         this.clearEdgeLightBackground(sourceContext, frameRect.width, frameRect.height);
 
         const sourceBounds = this.getVisibleBounds(sourceCanvas);
-        const scale = (targetBounds.height / sourceBounds.height) * TREE_HIT_FRAME_SCALE_MULTIPLIER;
+        const scale = Math.min(
+          (targetBounds.height / sourceBounds.height) * TREE_HIT_FRAME_SCALE_MULTIPLIER,
+          (targetBounds.width / sourceBounds.width) * TREE_HIT_FRAME_MAX_WIDTH_MULTIPLIER,
+        );
         const drawWidth = sourceBounds.width * scale;
         const drawHeight = sourceBounds.height * scale;
         const canvas = document.createElement('canvas');

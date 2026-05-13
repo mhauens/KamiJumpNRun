@@ -157,6 +157,7 @@ const TREE_ATTACK_ANIMATION_KEY = 'tree-hit';
 const TREE_DISPLAY_HEIGHT = 175;
 const TREE_FOOT_SINK = 18;
 const TREE_NORMAL_ATTACK_CHANCE = 0.45;
+const TREE_NORMAL_COIN_PENALTY = 1;
 const TREE_BOSS_ATTACK_CHANCE = 0.65;
 const TREE_NORMAL_COUNT = 3;
 const TREE_NORMAL_MIN_PLATFORM_WIDTH = 220;
@@ -1689,6 +1690,7 @@ export class LevelScene extends Phaser.Scene {
     this.checkBossStomp();
     this.updateBoss();
     this.updateProjectiles();
+    this.updateTrees();
     this.updateBossTrees();
     this.rearmBossContactDamage();
 
@@ -3069,6 +3071,46 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  updateTrees() {
+    if (!this.trees || !this.player?.body) {
+      return;
+    }
+
+    this.trees.children.each((tree) => {
+      if (
+        !tree.active ||
+        tree.getData('attacking') ||
+        !tree.getData('checked') ||
+        this.isPlayerOverlappingTree(tree)
+      ) {
+        return;
+      }
+
+      tree.setData('checked', false);
+    });
+  }
+
+  isPlayerOverlappingTree(tree) {
+    if (!tree?.body?.enable || !this.player?.body) {
+      return false;
+    }
+
+    return Phaser.Geom.Intersects.RectangleToRectangle(
+      new Phaser.Geom.Rectangle(
+        this.player.body.x,
+        this.player.body.y,
+        this.player.body.width,
+        this.player.body.height,
+      ),
+      new Phaser.Geom.Rectangle(
+        tree.body.x,
+        tree.body.y,
+        tree.body.width,
+        tree.body.height,
+      ),
+    );
+  }
+
   updateBossTrees() {
     if (
       !this.bossFightActive ||
@@ -3250,7 +3292,17 @@ export class LevelScene extends Phaser.Scene {
       this.playerIsHit = false;
       setSpriteTexture(tree, 'tree');
       tree.setFlipX(false);
-      this.respawnPlayer(true, 'Baum-Angriff! Zurueck zum Checkpoint');
+      const lostCoins = this.loseCoins(TREE_NORMAL_COIN_PENALTY);
+      this.refreshHud();
+      this.respawnPlayer(
+        true,
+        lostCoins > 0
+          ? `Baum-Angriff! -${lostCoins} Coin`
+          : 'Baum-Angriff! Zurueck zum Checkpoint',
+      );
+      tree.setData('attacking', false);
+      tree.setData('checked', false);
+      tree.body.enable = true;
     });
   }
 
