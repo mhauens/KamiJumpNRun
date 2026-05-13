@@ -153,6 +153,26 @@ const PAINT_PUDDLE_SPAWN_COOLDOWN_MS = 5000;
 const PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD = 128;
 const PAINT_PUDDLE_STEP_TOLERANCE = 18;
 const PAINT_PUDDLE_STEP_HORIZONTAL_INSET = 10;
+const TREE_ATTACK_ANIMATION_KEY = 'tree-hit';
+const TREE_DISPLAY_HEIGHT = 175;
+const TREE_FOOT_SINK = 18;
+const TREE_NORMAL_ATTACK_CHANCE = 0.45;
+const TREE_BOSS_ATTACK_CHANCE = 0.65;
+const TREE_NORMAL_COUNT = 3;
+const TREE_NORMAL_MIN_PLATFORM_WIDTH = 220;
+const TREE_NORMAL_START_PADDING = 220;
+const TREE_NORMAL_BOSS_PADDING = 220;
+const TREE_BOSS_DAMAGE = 1;
+const TREE_BOSS_MAX_ACTIVE = 2;
+const TREE_BOSS_SPAWN_INITIAL_DELAY_MS = 1500;
+const TREE_BOSS_SPAWN_MIN_DELAY_MS = 3400;
+const TREE_BOSS_SPAWN_MAX_DELAY_MS = 5600;
+const TREE_BOSS_LIFETIME_MS = 8000;
+const TREE_BOSS_FADE_MS = 280;
+const TREE_BOSS_ARENA_MARGIN = 170;
+const TREE_BOSS_PLAYER_MIN_OFFSET = 190;
+const TREE_BOSS_PLAYER_MAX_OFFSET = 360;
+const TREE_BOSS_PLAYER_SAFE_DISTANCE = 240;
 const CARD_SPREAD_BOSS_ID = 3;
 const CARD_SPREAD_ATTACK_CHANCE = 0.28;
 const CARD_SPREAD_MIN_PROJECTILES = 3;
@@ -216,6 +236,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossBodyBounds = null;
     this.playerSlowUntil = 0;
     this.playerJumpBlockedUntil = 0;
+    this.nextBossTreeSpawnAt = 0;
     this.nextPaintPuddleSpawnAt = 0;
     this.bossChargeStartedAt = 0;
     this.bossChargeStartX = 0;
@@ -275,6 +296,7 @@ export class LevelScene extends Phaser.Scene {
     this.createCheckpoints();
     this.createGoal();
     this.createBoss();
+    this.createTrees();
     this.createHud();
     this.createBossRetryUi();
     this.createLevelMusicControls();
@@ -1046,6 +1068,82 @@ export class LevelScene extends Phaser.Scene {
     this.paintPuddles = this.physics.add.staticGroup();
   }
 
+  createTrees() {
+    this.trees = this.physics.add.staticGroup();
+
+    this.getNormalTreeEntries().forEach((entry) => {
+      this.createTree(entry.x, entry.y, {
+        attackChance: entry.attackChance ?? TREE_NORMAL_ATTACK_CHANCE,
+        bossTree: false,
+      });
+    });
+  }
+
+  getNormalTreeEntries() {
+    if (Array.isArray(this.level.trees) && this.level.trees.length > 0) {
+      return this.level.trees.map((entry) => ({
+        ...entry,
+        y: entry.y ?? this.getPlatformTopAt(entry.x) ?? this.level.spawn.y,
+      }));
+    }
+
+    const maxTreeX = this.level.boss.triggerX - TREE_NORMAL_BOSS_PADDING;
+    const usablePlatforms = this.level.platforms
+      .filter((platform) => (
+        platform.width >= TREE_NORMAL_MIN_PLATFORM_WIDTH &&
+        platform.height > PLATFORM_SURFACE_HEIGHT &&
+        platform.x + platform.width > TREE_NORMAL_START_PADDING &&
+        platform.x < maxTreeX
+      ))
+      .sort((left, right) => left.x - right.x);
+
+    if (usablePlatforms.length === 0) {
+      return [];
+    }
+
+    const step = usablePlatforms.length / (TREE_NORMAL_COUNT + 1);
+
+    return Array.from({ length: TREE_NORMAL_COUNT }, (_, index) => {
+      const platformIndex = Phaser.Math.Clamp(
+        Math.round(step * (index + 1) - 0.5),
+        0,
+        usablePlatforms.length - 1,
+      );
+      const platform = usablePlatforms[platformIndex];
+      const x = Phaser.Math.Clamp(
+        platform.x + platform.width * (index % 2 === 0 ? 0.62 : 0.38),
+        platform.x + 70,
+        platform.x + platform.width - 70,
+      );
+
+      return {
+        x,
+        y: platform.y,
+        attackChance: TREE_NORMAL_ATTACK_CHANCE,
+      };
+    });
+  }
+
+  createTree(x, platformTop, { attackChance, bossTree }) {
+    const source = this.textures.get('tree').getSourceImage();
+    const displayWidth = source.width * (TREE_DISPLAY_HEIGHT / source.height);
+    const tree = this.trees
+      .create(x, platformTop + TREE_FOOT_SINK, ...getTextureArgs('tree'))
+      .setOrigin(0.5, 1)
+      .setDisplaySize(displayWidth, TREE_DISPLAY_HEIGHT)
+      .setDepth(bossTree ? 8 : 5);
+
+    tree
+      .setData('logicalTextureKey', 'tree')
+      .setData('attackChance', attackChance)
+      .setData('bossTree', bossTree)
+      .setData('checked', false)
+      .setData('attacking', false);
+    tree.refreshBody();
+
+    return tree;
+  }
+
   createHud() {
     this.hudPanel = this.add
       .rectangle(18, 18, HUD_PANEL_WIDTH, HUD_PANEL_HEIGHT, 0x10243a, 0.78)
@@ -1537,6 +1635,13 @@ export class LevelScene extends Phaser.Scene {
       null,
       this,
     );
+    this.physics.add.overlap(
+      this.player,
+      this.trees,
+      this.handleTreeOverlap,
+      null,
+      this,
+    );
   }
 
   configureCamera() {
@@ -1584,6 +1689,7 @@ export class LevelScene extends Phaser.Scene {
     this.checkBossStomp();
     this.updateBoss();
     this.updateProjectiles();
+    this.updateBossTrees();
     this.rearmBossContactDamage();
 
     if (this.player.y > this.level.worldHeight + FALL_LIMIT_PADDING) {
@@ -1789,6 +1895,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossState = 'patrol';
     this.playerBossContactDamageArmed = true;
     this.clearPaintPuddles();
+    this.clearBossTrees();
     this.playerMaxHp = this.getPlayerBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
@@ -1804,6 +1911,7 @@ export class LevelScene extends Phaser.Scene {
     this.createArenaWall();
     this.nextBossAttackAt = this.time.now + 700;
     this.nextBossContactDamageAt = 0;
+    this.nextBossTreeSpawnAt = this.time.now + TREE_BOSS_SPAWN_INITIAL_DELAY_MS;
     this.setHealthBarsVisible(true);
     this.refreshHealthBars();
     this.setArenaCamera();
@@ -2961,6 +3069,203 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  updateBossTrees() {
+    if (
+      !this.bossFightActive ||
+      this.bossDefeated ||
+      this.bossIntroActive ||
+      this.bossCountdownActive ||
+      this.awaitingBossRetry ||
+      this.time.now < this.nextBossTreeSpawnAt
+    ) {
+      return;
+    }
+
+    if (this.getActiveBossTreeCount() < TREE_BOSS_MAX_ACTIVE) {
+      this.spawnBossTree();
+    }
+
+    this.scheduleNextBossTreeSpawn();
+  }
+
+  getActiveBossTreeCount() {
+    if (!this.trees) {
+      return 0;
+    }
+
+    return this.trees.children.entries.filter((tree) => (
+      tree.active && tree.getData('bossTree')
+    )).length;
+  }
+
+  scheduleNextBossTreeSpawn() {
+    this.nextBossTreeSpawnAt = this.time.now + Phaser.Math.Between(
+      TREE_BOSS_SPAWN_MIN_DELAY_MS,
+      TREE_BOSS_SPAWN_MAX_DELAY_MS,
+    );
+  }
+
+  spawnBossTree() {
+    const bossConfig = this.getBossConfig();
+    const x = this.getBossTreeSpawnX(bossConfig);
+
+    if (x === null) {
+      return;
+    }
+
+    const tree = this.createTree(x, bossConfig.floorY, {
+      attackChance: TREE_BOSS_ATTACK_CHANCE,
+      bossTree: true,
+    });
+    tree.setAlpha(0);
+
+    this.tweens.add({
+      targets: tree,
+      alpha: 1,
+      duration: TREE_BOSS_FADE_MS,
+      ease: 'Quad.out',
+    });
+
+    this.time.delayedCall(TREE_BOSS_LIFETIME_MS, () => {
+      if (!tree.active || tree.getData('attacking')) {
+        return;
+      }
+
+      this.tweens.add({
+        targets: tree,
+        alpha: 0,
+        duration: TREE_BOSS_FADE_MS,
+        onComplete: () => tree.destroy(),
+      });
+    });
+  }
+
+  getBossTreeSpawnX(bossConfig) {
+    const minX = bossConfig.arenaLeft + TREE_BOSS_ARENA_MARGIN;
+    const maxX = bossConfig.arenaRight - TREE_BOSS_ARENA_MARGIN;
+    const preferredDirection = this.player.body.velocity.x < -10 || this.player.flipX ? -1 : 1;
+    const directions = [preferredDirection, -preferredDirection];
+
+    for (const direction of directions) {
+      const distance = Phaser.Math.Between(
+        TREE_BOSS_PLAYER_MIN_OFFSET,
+        TREE_BOSS_PLAYER_MAX_OFFSET,
+      );
+      const x = Phaser.Math.Clamp(this.player.x + direction * distance, minX, maxX);
+
+      if (this.isBossTreeSpawnSafe(x)) {
+        return x;
+      }
+    }
+
+    for (const direction of directions) {
+      const x = Phaser.Math.Clamp(
+        this.player.x + direction * TREE_BOSS_PLAYER_MAX_OFFSET,
+        minX,
+        maxX,
+      );
+
+      if (this.isBossTreeSpawnSafe(x)) {
+        return x;
+      }
+    }
+
+    return null;
+  }
+
+  isBossTreeSpawnSafe(x) {
+    return Math.abs(x - this.player.x) >= TREE_BOSS_PLAYER_SAFE_DISTANCE &&
+      Math.abs(x - this.boss.x) >= TREE_BOSS_PLAYER_MIN_OFFSET;
+  }
+
+  handleTreeOverlap(player, tree) {
+    if (
+      !tree.active ||
+      tree.getData('attacking') ||
+      this.playerIsHit ||
+      this.isRespawning ||
+      this.levelComplete ||
+      this.awaitingBossRetry
+    ) {
+      return;
+    }
+
+    if (tree.getData('bossTree')) {
+      if (!this.bossFightActive || this.bossIntroActive || this.bossCountdownActive || this.bossDefeated) {
+        return;
+      }
+
+      if (tree.getData('checked')) {
+        return;
+      }
+
+      tree.setData('checked', true);
+
+      if (Math.random() > (tree.getData('attackChance') ?? TREE_BOSS_ATTACK_CHANCE)) {
+        return;
+      }
+
+      this.startTreeAttack(tree, true);
+      return;
+    }
+
+    if (this.bossFightActive || this.bossIntroActive || this.bossCountdownActive || tree.getData('checked')) {
+      return;
+    }
+
+    tree.setData('checked', true);
+
+    if (Math.random() > (tree.getData('attackChance') ?? TREE_NORMAL_ATTACK_CHANCE)) {
+      return;
+    }
+
+    this.startTreeAttack(tree, false);
+  }
+
+  startTreeAttack(tree, isBossTree) {
+    tree.setData('attacking', true);
+    tree.setFlipX(this.player.x < tree.x);
+    tree.body.enable = false;
+    tree.play(TREE_ATTACK_ANIMATION_KEY, true);
+
+    if (isBossTree) {
+      this.damagePlayer(TREE_BOSS_DAMAGE, { critChance: 0 });
+      tree.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        tree.destroy();
+      });
+      return;
+    }
+
+    this.playPlayerHittedSfx();
+    this.cameras.main.shake(130, 0.003);
+    this.playerIsHit = true;
+    this.player.setVelocityX(0);
+    this.player.setTint(0xff7777);
+
+    tree.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!this.player?.active) {
+        return;
+      }
+
+      this.playerIsHit = false;
+      setSpriteTexture(tree, 'tree');
+      tree.setFlipX(false);
+      this.respawnPlayer(true, 'Baum-Angriff! Zurueck zum Checkpoint');
+    });
+  }
+
+  clearBossTrees() {
+    this.nextBossTreeSpawnAt = 0;
+    this.trees?.children.each((tree) => {
+      if (!tree.getData('bossTree')) {
+        return;
+      }
+
+      this.tweens.killTweensOf(tree);
+      tree.destroy();
+    });
+  }
+
   shouldUseBossPaintPuddles() {
     return PAINT_PUDDLE_LEVEL_IDS.has(this.level.id) &&
       this.textures.exists(this.getPaintPuddleTextureKey());
@@ -3291,12 +3596,12 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  damagePlayer(damage) {
+  damagePlayer(damage, { critChance = this.getBossCritChance() } = {}) {
     if (this.playerIsHit || this.isRespawning || this.bossDefeated || !this.bossFightActive) {
       return;
     }
 
-    const hit = this.resolveHitDamage(damage, this.getBossCritChance());
+    const hit = this.resolveHitDamage(damage, critChance);
     this.playerHp = Math.max(0, this.playerHp - hit.damage);
     this.playerIsHit = true;
     this.playPlayerHittedSfx();
@@ -3418,6 +3723,7 @@ export class LevelScene extends Phaser.Scene {
     this.removeArenaWall();
     this.clearProjectiles();
     this.clearPaintPuddles();
+    this.clearBossTrees();
     this.goal.enableBody(false, this.goal.x, this.goal.y, true, true);
     this.goal.refreshBody();
     this.setArenaCamera();
@@ -3439,6 +3745,7 @@ export class LevelScene extends Phaser.Scene {
     this.boss.stop();
     this.clearProjectiles();
     this.clearPaintPuddles();
+    this.clearBossTrees();
     this.setHealthBarsVisible(false);
     this.ensureBossAnimations();
     this.placeBossFightCharactersAtStart();
@@ -3488,6 +3795,7 @@ export class LevelScene extends Phaser.Scene {
     this.configureBossBody();
     this.clearProjectiles();
     this.clearPaintPuddles();
+    this.clearBossTrees();
     this.hideBossSplash();
     this.setHealthBarsVisible(false);
     this.placePlayerAtBossStart();
@@ -3670,12 +3978,13 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  respawnPlayer(isManual) {
+  respawnPlayer(isManual, message = null) {
     if (this.isRespawning || this.levelComplete) {
       return;
     }
 
     this.isRespawning = true;
+    this.playerIsHit = false;
     let lostCoins = 0;
 
     if (!isManual) {
@@ -3695,7 +4004,7 @@ export class LevelScene extends Phaser.Scene {
     setSpriteTexture(this.player, 'char-stand');
     this.configurePlayerBody();
     this.cameras.main.shake(150, 0.004);
-    this.showToast(isManual ? 'Respawn' : `Fallstrafe -${lostCoins} Coins`);
+    this.showToast(message ?? (isManual ? 'Respawn' : `Fallstrafe -${lostCoins} Coins`));
 
     this.time.delayedCall(150, () => {
       this.isRespawning = false;

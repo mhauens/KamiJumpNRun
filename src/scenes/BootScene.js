@@ -15,9 +15,11 @@ import critHitUrl from '../../assets/shared/crit_hit.webp';
 import groundPlatformUrl from '../../assets/shared/ground_platform.webp';
 import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
+import treeUrl from '../../assets/shared/tree.webp';
+import treeHitUrl from '../../assets/shared/tree_hit.webp';
 import { BOSS_ASSETS } from '../data/bossAssets.js';
 import { RETRY_SOUNDS } from '../data/retrySounds.js';
-import { createRuntimeSpriteAtlas } from '../game/spriteAtlas.js';
+import { createRuntimeSpriteAtlas, getAnimationFrame } from '../game/spriteAtlas.js';
 
 const WALK_FRAME_VISUAL_SCALE = 0.72;
 const WALK_FRAME_VERTICAL_OFFSET = 210;
@@ -30,6 +32,8 @@ const BOSS_4_HIT_FRAME_OVERFLOW = 24;
 const BOSS_SIGNIFICANT_COMPONENT_RATIO = 0.06;
 const HIT_ANIMATION_FRAME_RATE = 8;
 const ATTACK_ANIMATION_FRAME_RATE = 6;
+const TREE_HIT_ANIMATION_FRAME_RATE = 10;
+const TREE_HIT_FRAME_SCALE_MULTIPLIER = 0.82;
 const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
   'player-hit-boss-6-source',
   'player-hit-boss-6-2-source',
@@ -56,6 +60,8 @@ export class BootScene extends Phaser.Scene {
     this.load.image('ground-platform-source', groundPlatformUrl);
     this.load.image('level-template', levelTemplateUrl);
     this.load.image('start-screen', startScreenUrl);
+    this.load.image('tree-source', treeUrl);
+    this.load.image('tree-hit-source', treeHitUrl);
     this.load.image('crit-hit', critHitUrl);
     this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
     this.loadRetryAudio();
@@ -65,8 +71,10 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     this.createCharacterWalkTextures();
+    this.createTreeTextures();
     this.createGeneratedTextures();
     this.createRuntimeAtlas();
+    this.createTreeAnimations();
 
     this.scene.start('StartScene');
   }
@@ -852,6 +860,76 @@ export class BootScene extends Phaser.Scene {
     context.putImageData(frameData, 0, 0);
   }
 
+  clearEdgeLightBackground(context, width, height) {
+    const frameData = context.getImageData(0, 0, width, height);
+    const pixels = frameData.data;
+    const visited = new Uint8Array(width * height);
+    const stack = [];
+
+    const isLightBackgroundPixel = (pixelIndex) => {
+      const dataIndex = pixelIndex * 4;
+      const red = pixels[dataIndex];
+      const green = pixels[dataIndex + 1];
+      const blue = pixels[dataIndex + 2];
+      const alpha = pixels[dataIndex + 3];
+      const brightest = Math.max(red, green, blue);
+      const darkest = Math.min(red, green, blue);
+
+      return alpha > 0 && darkest > 225 && brightest - darkest < 28;
+    };
+
+    const visit = (pixelIndex) => {
+      if (
+        pixelIndex < 0 ||
+        pixelIndex >= visited.length ||
+        visited[pixelIndex] ||
+        !isLightBackgroundPixel(pixelIndex)
+      ) {
+        return;
+      }
+
+      visited[pixelIndex] = 1;
+      stack.push(pixelIndex);
+    };
+
+    for (let x = 0; x < width; x += 1) {
+      visit(x);
+      visit((height - 1) * width + x);
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      visit(y * width);
+      visit(y * width + width - 1);
+    }
+
+    while (stack.length > 0) {
+      const pixelIndex = stack.pop();
+      const dataIndex = pixelIndex * 4;
+      const x = pixelIndex % width;
+      const y = Math.floor(pixelIndex / width);
+
+      pixels[dataIndex + 3] = 0;
+
+      if (x > 0) {
+        visit(pixelIndex - 1);
+      }
+
+      if (x < width - 1) {
+        visit(pixelIndex + 1);
+      }
+
+      if (y > 0) {
+        visit(pixelIndex - width);
+      }
+
+      if (y < height - 1) {
+        visit(pixelIndex + width);
+      }
+    }
+
+    context.putImageData(frameData, 0, 0);
+  }
+
   clearEdgeChromaBackground(context, width, height) {
     const frameData = context.getImageData(0, 0, width, height);
     const pixels = frameData.data;
@@ -943,6 +1021,8 @@ export class BootScene extends Phaser.Scene {
       'char-stand',
       'char-jump',
       ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `char-walk-${index + 1}`),
+      'tree',
+      ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `tree-hit-${index + 1}`),
       'coin',
       'ball',
       'checkpoint',
@@ -950,6 +1030,107 @@ export class BootScene extends Phaser.Scene {
       'boss-projectile',
       'crit-hit',
     ], { reset: true });
+  }
+
+  createTreeTextures() {
+    this.createCleanTreeTexture();
+    this.createTreeHitFrames();
+  }
+
+  createCleanTreeTexture() {
+    if (this.textures.exists('tree')) {
+      return;
+    }
+
+    const sourceImage = this.textures.get('tree-source').getSourceImage();
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceImage.width;
+    canvas.height = sourceImage.height;
+
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.imageSmoothingEnabled = false;
+    context.drawImage(sourceImage, 0, 0);
+    this.clearEdgeLightBackground(context, canvas.width, canvas.height);
+
+    this.textures.addCanvas('tree', canvas);
+  }
+
+  createTreeHitFrames() {
+    const sourceImage = this.textures.get('tree-hit-source').getSourceImage();
+    const targetImage = this.textures.get('tree').getSourceImage();
+    const targetBounds = this.getVisibleBounds(targetImage);
+    const targetBaseline = targetBounds.y + targetBounds.height;
+
+    for (let row = 0; row < SHEET_ROWS; row += 1) {
+      for (let column = 0; column < SHEET_COLUMNS; column += 1) {
+        const frameIndex = row * SHEET_COLUMNS + column + 1;
+        const targetKey = `tree-hit-${frameIndex}`;
+
+        if (this.textures.exists(targetKey)) {
+          continue;
+        }
+
+        const frameRect = this.getSheetFrameRect(sourceImage, column, row);
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = frameRect.width;
+        sourceCanvas.height = frameRect.height;
+
+        const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+        sourceContext.imageSmoothingEnabled = false;
+        sourceContext.drawImage(
+          sourceImage,
+          frameRect.x,
+          frameRect.y,
+          frameRect.width,
+          frameRect.height,
+          0,
+          0,
+          frameRect.width,
+          frameRect.height,
+        );
+        this.clearEdgeLightBackground(sourceContext, frameRect.width, frameRect.height);
+
+        const sourceBounds = this.getVisibleBounds(sourceCanvas);
+        const scale = (targetBounds.height / sourceBounds.height) * TREE_HIT_FRAME_SCALE_MULTIPLIER;
+        const drawWidth = sourceBounds.width * scale;
+        const drawHeight = sourceBounds.height * scale;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetImage.width;
+        canvas.height = targetImage.height;
+
+        const context = canvas.getContext('2d');
+        context.imageSmoothingEnabled = false;
+        context.drawImage(
+          sourceCanvas,
+          sourceBounds.x,
+          sourceBounds.y,
+          sourceBounds.width,
+          sourceBounds.height,
+          targetBounds.x + (targetBounds.width - drawWidth) / 2,
+          targetBaseline - drawHeight,
+          drawWidth,
+          drawHeight,
+        );
+
+        this.textures.addCanvas(targetKey, canvas);
+      }
+    }
+  }
+
+  createTreeAnimations() {
+    if (this.anims.exists('tree-hit')) {
+      return;
+    }
+
+    this.anims.create({
+      key: 'tree-hit',
+      frames: Array.from(
+        { length: SHEET_COLUMNS * SHEET_ROWS },
+        (_, index) => getAnimationFrame(`tree-hit-${index + 1}`),
+      ),
+      frameRate: TREE_HIT_ANIMATION_FRAME_RATE,
+      repeat: 0,
+    });
   }
 
   createPlatformTexture() {

@@ -137,3 +137,5 @@ Do not commit:
 Commit `pnpm-lock.yaml` when dependencies change. Do not add npm or yarn lockfiles.
 
 Do not move assets back into the root `assets/` folder. Keep the folder structure clear as more bosses and levels are added.
+
+Respond precisely and to the point. Avoid unnecessary explanations.
