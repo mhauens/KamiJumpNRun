@@ -174,6 +174,18 @@ const TREE_BOSS_ARENA_MARGIN = 170;
 const TREE_BOSS_PLAYER_MIN_OFFSET = 190;
 const TREE_BOSS_PLAYER_MAX_OFFSET = 360;
 const TREE_BOSS_PLAYER_SAFE_DISTANCE = 240;
+const FIRST_AID_KIT_DISPLAY_HEIGHT = 32;
+const FIRST_AID_KIT_HEAL_AMOUNT = 3;
+const FIRST_AID_KIT_HEALTH_THRESHOLD = 4;
+const FIRST_AID_KIT_BOSS_MIN_HEALTH_RATIO = 0.25;
+const FIRST_AID_KIT_SPAWN_CHANCE = 0.8;
+const FIRST_AID_KIT_MAX_SPAWNS_PER_FIGHT = 3;
+const FIRST_AID_KIT_SPAWN_INITIAL_DELAY_MS = 2200;
+const FIRST_AID_KIT_SPAWN_COOLDOWN_MS = 9000;
+const FIRST_AID_KIT_ARENA_MARGIN = 190;
+const FIRST_AID_KIT_PLAYER_SAFE_DISTANCE = 300;
+const FIRST_AID_KIT_BOSS_SAFE_DISTANCE = 130;
+const FIRST_AID_KIT_FOOT_OFFSET = 12;
 const CARD_SPREAD_BOSS_ID = 3;
 const CARD_SPREAD_ATTACK_CHANCE = 0.28;
 const CARD_SPREAD_MIN_PROJECTILES = 3;
@@ -238,6 +250,8 @@ export class LevelScene extends Phaser.Scene {
     this.playerSlowUntil = 0;
     this.playerJumpBlockedUntil = 0;
     this.nextBossTreeSpawnAt = 0;
+    this.nextFirstAidKitSpawnAt = 0;
+    this.firstAidKitSpawnsThisFight = 0;
     this.nextPaintPuddleSpawnAt = 0;
     this.bossChargeStartedAt = 0;
     this.bossChargeStartX = 0;
@@ -1692,6 +1706,7 @@ export class LevelScene extends Phaser.Scene {
     this.updateProjectiles();
     this.updateTrees();
     this.updateBossTrees();
+    this.updateFirstAidKitSpawns();
     this.rearmBossContactDamage();
 
     if (this.player.y > this.level.worldHeight + FALL_LIMIT_PADDING) {
@@ -1898,6 +1913,9 @@ export class LevelScene extends Phaser.Scene {
     this.playerBossContactDamageArmed = true;
     this.clearPaintPuddles();
     this.clearBossTrees();
+    this.clearFirstAidKits();
+    this.firstAidKitSpawnsThisFight = 0;
+    this.nextFirstAidKitSpawnAt = this.time.now + FIRST_AID_KIT_SPAWN_INITIAL_DELAY_MS;
     this.playerMaxHp = this.getPlayerBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
@@ -3220,6 +3238,116 @@ export class LevelScene extends Phaser.Scene {
       Math.abs(x - this.boss.x) >= TREE_BOSS_PLAYER_MIN_OFFSET;
   }
 
+  updateFirstAidKitSpawns() {
+    if (
+      !this.bossFightActive ||
+      this.bossDefeated ||
+      this.bossIntroActive ||
+      this.bossCountdownActive ||
+      this.awaitingBossRetry ||
+      this.playerHp > FIRST_AID_KIT_HEALTH_THRESHOLD ||
+      this.bossHp <= this.bossMaxHp * FIRST_AID_KIT_BOSS_MIN_HEALTH_RATIO ||
+      this.firstAidKitSpawnsThisFight >= FIRST_AID_KIT_MAX_SPAWNS_PER_FIGHT ||
+      this.hasActiveFirstAidKit() ||
+      this.time.now < this.nextFirstAidKitSpawnAt
+    ) {
+      return;
+    }
+
+    this.nextFirstAidKitSpawnAt = this.time.now + FIRST_AID_KIT_SPAWN_COOLDOWN_MS;
+
+    if (Math.random() > FIRST_AID_KIT_SPAWN_CHANCE) {
+      return;
+    }
+
+    this.spawnFirstAidKit();
+  }
+
+  hasActiveFirstAidKit() {
+    if (!this.collectibles) {
+      return false;
+    }
+
+    return this.collectibles.children.entries.some((pickup) => (
+      pickup.active && pickup.getData('pickupType') === 'firstAidKit'
+    ));
+  }
+
+  spawnFirstAidKit() {
+    const bossConfig = this.getBossConfig();
+    const x = this.getFirstAidKitSpawnX(bossConfig);
+
+    if (x === null) {
+      return;
+    }
+
+    const source = this.textures.get('first-aid-kit').getSourceImage();
+    const displayWidth = source.width * (FIRST_AID_KIT_DISPLAY_HEIGHT / source.height);
+    const pickup = this.collectibles
+      .create(x, bossConfig.floorY - FIRST_AID_KIT_FOOT_OFFSET, ...getTextureArgs('first-aid-kit'))
+      .setOrigin(0.5, 1)
+      .setDisplaySize(displayWidth, FIRST_AID_KIT_DISPLAY_HEIGHT)
+      .setDepth(9)
+      .setAlpha(0);
+
+    pickup.body.setAllowGravity(false);
+    pickup.body.setImmovable(true);
+    pickup.setData('logicalTextureKey', 'first-aid-kit');
+    pickup.setData('pickupType', 'firstAidKit');
+    pickup.setData('healAmount', FIRST_AID_KIT_HEAL_AMOUNT);
+    pickup.setData('baseY', pickup.y);
+    this.firstAidKitSpawnsThisFight += 1;
+
+    this.tweens.add({
+      targets: pickup,
+      alpha: 1,
+      duration: 180,
+      ease: 'Quad.out',
+    });
+    this.tweens.add({
+      targets: pickup,
+      y: pickup.y - 8,
+      duration: 850,
+      ease: 'Sine.inOut',
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  getFirstAidKitSpawnX(bossConfig) {
+    const minX = bossConfig.arenaLeft + FIRST_AID_KIT_ARENA_MARGIN;
+    const maxX = bossConfig.arenaRight - FIRST_AID_KIT_ARENA_MARGIN;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const x = Phaser.Math.Between(minX, maxX);
+
+      if (this.isFirstAidKitSpawnSafe(x)) {
+        return x;
+      }
+    }
+
+    const directions = this.player.x < (minX + maxX) / 2 ? [1, -1] : [-1, 1];
+
+    for (const direction of directions) {
+      const x = Phaser.Math.Clamp(
+        this.player.x + direction * FIRST_AID_KIT_PLAYER_SAFE_DISTANCE,
+        minX,
+        maxX,
+      );
+
+      if (this.isFirstAidKitSpawnSafe(x)) {
+        return x;
+      }
+    }
+
+    return null;
+  }
+
+  isFirstAidKitSpawnSafe(x) {
+    return Math.abs(x - this.player.x) >= FIRST_AID_KIT_PLAYER_SAFE_DISTANCE &&
+      Math.abs(x - this.boss.x) >= FIRST_AID_KIT_BOSS_SAFE_DISTANCE;
+  }
+
   handleTreeOverlap(player, tree) {
     if (
       !tree.active ||
@@ -3315,6 +3443,18 @@ export class LevelScene extends Phaser.Scene {
 
       this.tweens.killTweensOf(tree);
       tree.destroy();
+    });
+  }
+
+  clearFirstAidKits() {
+    this.nextFirstAidKitSpawnAt = 0;
+    this.collectibles?.children.each((pickup) => {
+      if (pickup.getData('pickupType') !== 'firstAidKit') {
+        return;
+      }
+
+      this.tweens.killTweensOf(pickup);
+      pickup.destroy();
     });
   }
 
@@ -3776,6 +3916,7 @@ export class LevelScene extends Phaser.Scene {
     this.clearProjectiles();
     this.clearPaintPuddles();
     this.clearBossTrees();
+    this.clearFirstAidKits();
     this.goal.enableBody(false, this.goal.x, this.goal.y, true, true);
     this.goal.refreshBody();
     this.setArenaCamera();
@@ -3798,6 +3939,7 @@ export class LevelScene extends Phaser.Scene {
     this.clearProjectiles();
     this.clearPaintPuddles();
     this.clearBossTrees();
+    this.clearFirstAidKits();
     this.setHealthBarsVisible(false);
     this.ensureBossAnimations();
     this.placeBossFightCharactersAtStart();
@@ -3848,6 +3990,7 @@ export class LevelScene extends Phaser.Scene {
     this.clearProjectiles();
     this.clearPaintPuddles();
     this.clearBossTrees();
+    this.clearFirstAidKits();
     this.hideBossSplash();
     this.setHealthBarsVisible(false);
     this.placePlayerAtBossStart();
@@ -3925,6 +4068,24 @@ export class LevelScene extends Phaser.Scene {
     const value = pickup.getData('value') ?? 0;
     const playerHpBonus = pickup.getData('bossHpBonus') ?? 0;
     const pickupType = pickup.getData('pickupType');
+
+    if (pickupType === 'firstAidKit') {
+      const healAmount = pickup.getData('healAmount') ?? FIRST_AID_KIT_HEAL_AMOUNT;
+      const healed = Math.max(0, Math.min(healAmount, this.playerMaxHp - this.playerHp));
+
+      this.tweens.killTweensOf(pickup);
+      pickup.disableBody(true, true);
+
+      if (healed > 0) {
+        this.playerHp += healed;
+        this.refreshHealthBars();
+      }
+
+      this.playCoinSfx();
+      this.showToast(healed > 0 ? `+${healed} Leben` : 'Leben voll');
+      return;
+    }
+
     this.score += value;
     this.levelCoinHpBonus = Math.min(
       this.level.coins.length * COIN_PLAYER_HP_BONUS,

@@ -17,6 +17,7 @@ import levelTemplateUrl from '../../assets/shared/level_template.webp';
 import startScreenUrl from '../../assets/shared/start_screen.webp';
 import treeUrl from '../../assets/shared/tree.webp';
 import treeHitUrl from '../../assets/shared/tree_hit.webp';
+import firstAidKitUrl from '../../assets/shared/first_aid_kit.webp';
 import { BOSS_ASSETS } from '../data/bossAssets.js';
 import { RETRY_SOUNDS } from '../data/retrySounds.js';
 import { createRuntimeSpriteAtlas, getAnimationFrame } from '../game/spriteAtlas.js';
@@ -63,6 +64,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('start-screen', startScreenUrl);
     this.load.image('tree-source', treeUrl);
     this.load.image('tree-hit-source', treeHitUrl);
+    this.load.image('first-aid-kit', firstAidKitUrl);
     this.load.image('crit-hit', critHitUrl);
     this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
     this.loadRetryAudio();
@@ -1024,6 +1026,7 @@ export class BootScene extends Phaser.Scene {
       ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `char-walk-${index + 1}`),
       'tree',
       ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `tree-hit-${index + 1}`),
+      'first-aid-kit',
       'coin',
       'ball',
       'checkpoint',
