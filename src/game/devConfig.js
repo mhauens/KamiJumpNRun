@@ -1,6 +1,18 @@
 import { getLevels } from '../data/levelStore.js';
 
 const START_LEVEL_ENV_KEY = 'VITE_START_LEVEL';
+const SHOW_PLATFORM_NUMBERS_ENV_KEY = 'VITE_SHOW_PLATFORM_NUMBERS';
+const START_BOSS_DEFEATED_ENV_KEY = 'VITE_START_BOSS_DEFEATED';
+
+function readDevBooleanEnv(key) {
+  if (!import.meta.env.DEV) {
+    return false;
+  }
+
+  const rawValue = import.meta.env[key]?.trim().toLowerCase();
+
+  return rawValue === 'true' || rawValue === '1' || rawValue === 'yes' || rawValue === 'on';
+}
 
 export function resolveStartLevelIndex() {
   if (!import.meta.env.DEV) {
@@ -26,4 +38,12 @@ export function resolveStartLevelIndex() {
   }
 
   return matchingLevelIndex;
+}
+
+export function shouldShowPlatformNumbers() {
+  return readDevBooleanEnv(SHOW_PLATFORM_NUMBERS_ENV_KEY);
+}
+
+export function shouldStartBossDefeated() {
+  return readDevBooleanEnv(START_BOSS_DEFEATED_ENV_KEY);
 }

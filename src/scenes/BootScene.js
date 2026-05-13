@@ -18,6 +18,10 @@ import startScreenUrl from '../../assets/shared/start_screen.webp';
 import treeUrl from '../../assets/shared/tree.webp';
 import treeHitUrl from '../../assets/shared/tree_hit.webp';
 import firstAidKitUrl from '../../assets/shared/first_aid_kit.webp';
+import treasureUrl from '../../assets/shared/treasure.webp';
+import treasureBoxAnimationUrl from '../../assets/shared/treasure_box_animation.webp';
+import treasureBoxClosedUrl from '../../assets/shared/treasure_box_closed.webp';
+import treasureBoxOpenUrl from '../../assets/shared/treasure_box_open.webp';
 import { BOSS_ASSETS } from '../data/bossAssets.js';
 import { RETRY_SOUNDS } from '../data/retrySounds.js';
 import { createRuntimeSpriteAtlas, getAnimationFrame } from '../game/spriteAtlas.js';
@@ -36,6 +40,7 @@ const ATTACK_ANIMATION_FRAME_RATE = 6;
 const TREE_HIT_ANIMATION_FRAME_RATE = 10;
 const TREE_HIT_FRAME_SCALE_MULTIPLIER = 0.92;
 const TREE_HIT_FRAME_MAX_WIDTH_MULTIPLIER = 1.84;
+const TREASURE_BOX_ANIMATION_FRAME_RATE = 8;
 const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
   'player-hit-boss-6-source',
   'player-hit-boss-6-2-source',
@@ -65,6 +70,10 @@ export class BootScene extends Phaser.Scene {
     this.load.image('tree-source', treeUrl);
     this.load.image('tree-hit-source', treeHitUrl);
     this.load.image('first-aid-kit', firstAidKitUrl);
+    this.load.image('treasure', treasureUrl);
+    this.load.image('treasure-box-animation-source', treasureBoxAnimationUrl);
+    this.load.image('treasure-box-closed-source', treasureBoxClosedUrl);
+    this.load.image('treasure-box-open-source', treasureBoxOpenUrl);
     this.load.image('crit-hit', critHitUrl);
     this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
     this.loadRetryAudio();
@@ -75,9 +84,11 @@ export class BootScene extends Phaser.Scene {
   create() {
     this.createCharacterWalkTextures();
     this.createTreeTextures();
+    this.createTreasureBoxTextures();
     this.createGeneratedTextures();
     this.createRuntimeAtlas();
     this.createTreeAnimations();
+    this.createTreasureBoxAnimations();
 
     this.scene.start('StartScene');
   }
@@ -1026,7 +1037,11 @@ export class BootScene extends Phaser.Scene {
       ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `char-walk-${index + 1}`),
       'tree',
       ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `tree-hit-${index + 1}`),
+      ...Array.from({ length: SHEET_COLUMNS * SHEET_ROWS }, (_, index) => `treasure-box-frame-${index + 1}`),
       'first-aid-kit',
+      'treasure',
+      'treasure-box-closed',
+      'treasure-box-open',
       'coin',
       'ball',
       'checkpoint',
@@ -1039,6 +1054,116 @@ export class BootScene extends Phaser.Scene {
   createTreeTextures() {
     this.createCleanTreeTexture();
     this.createTreeHitFrames();
+  }
+
+  createTreasureBoxTextures() {
+    const targetImage = this.textures.get('treasure-box-open-source').getSourceImage();
+    const targetBounds = this.getVisibleBounds(targetImage);
+
+    this.createNormalizedTreasureBoxTexture(
+      'treasure-box-closed-source',
+      'treasure-box-closed',
+      targetImage,
+      targetBounds,
+    );
+    this.createNormalizedTreasureBoxTexture(
+      'treasure-box-open-source',
+      'treasure-box-open',
+      targetImage,
+      targetBounds,
+    );
+
+    const sourceImage = this.textures.get('treasure-box-animation-source').getSourceImage();
+
+    for (let row = 0; row < SHEET_ROWS; row += 1) {
+      for (let column = 0; column < SHEET_COLUMNS; column += 1) {
+        const frameIndex = row * SHEET_COLUMNS + column + 1;
+        const targetKey = `treasure-box-frame-${frameIndex}`;
+
+        if (this.textures.exists(targetKey)) {
+          continue;
+        }
+
+        const frameRect = this.getSheetFrameRect(sourceImage, column, row);
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = frameRect.width;
+        sourceCanvas.height = frameRect.height;
+
+        const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+        sourceContext.imageSmoothingEnabled = false;
+        sourceContext.drawImage(
+          sourceImage,
+          frameRect.x,
+          frameRect.y,
+          frameRect.width,
+          frameRect.height,
+          0,
+          0,
+          frameRect.width,
+          frameRect.height,
+        );
+
+        const sourceBounds = this.getVisibleBounds(sourceCanvas);
+        const canvas = document.createElement('canvas');
+        canvas.width = targetImage.width;
+        canvas.height = targetImage.height;
+
+        const context = canvas.getContext('2d');
+        context.imageSmoothingEnabled = false;
+        this.drawNormalizedTreasureBoxFrame(
+          context,
+          sourceCanvas,
+          sourceBounds,
+          targetBounds,
+        );
+
+        this.textures.addCanvas(targetKey, canvas);
+      }
+    }
+  }
+
+  createNormalizedTreasureBoxTexture(sourceKey, targetKey, targetImage, targetBounds) {
+    if (this.textures.exists(targetKey)) {
+      return;
+    }
+
+    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    const sourceBounds = this.getVisibleBounds(sourceImage);
+    const canvas = document.createElement('canvas');
+    canvas.width = targetImage.width;
+    canvas.height = targetImage.height;
+
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = false;
+    this.drawNormalizedTreasureBoxFrame(
+      context,
+      sourceImage,
+      sourceBounds,
+      targetBounds,
+    );
+
+    this.textures.addCanvas(targetKey, canvas);
+  }
+
+  drawNormalizedTreasureBoxFrame(context, sourceImage, sourceBounds, targetBounds) {
+    const scale = Math.min(
+      targetBounds.width / sourceBounds.width,
+      targetBounds.height / sourceBounds.height,
+    );
+    const drawWidth = sourceBounds.width * scale;
+    const drawHeight = sourceBounds.height * scale;
+
+    context.drawImage(
+      sourceImage,
+      sourceBounds.x,
+      sourceBounds.y,
+      sourceBounds.width,
+      sourceBounds.height,
+      targetBounds.x + (targetBounds.width - drawWidth) / 2,
+      targetBounds.y + targetBounds.height - drawHeight,
+      drawWidth,
+      drawHeight,
+    );
   }
 
   createCleanTreeTexture() {
@@ -1136,6 +1261,22 @@ export class BootScene extends Phaser.Scene {
         (_, index) => getAnimationFrame(`tree-hit-${index + 1}`),
       ),
       frameRate: TREE_HIT_ANIMATION_FRAME_RATE,
+      repeat: 0,
+    });
+  }
+
+  createTreasureBoxAnimations() {
+    if (this.anims.exists('treasure-box-open-animation')) {
+      return;
+    }
+
+    this.anims.create({
+      key: 'treasure-box-open-animation',
+      frames: Array.from(
+        { length: SHEET_COLUMNS * SHEET_ROWS },
+        (_, index) => getAnimationFrame(`treasure-box-frame-${index + 1}`),
+      ),
+      frameRate: TREASURE_BOX_ANIMATION_FRAME_RATE,
       repeat: 0,
     });
   }

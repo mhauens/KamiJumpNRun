@@ -18,6 +18,7 @@ import {
 import { BOSS_SPLASH_AUDIO } from '../data/bossSplashAudio.js';
 import { getLevel, getLevelCount, subscribeLevelDataUpdates } from '../data/levelStore.js';
 import { getNextRetrySoundConfig, rememberRetrySoundPlayback } from '../data/retrySounds.js';
+import { shouldShowPlatformNumbers, shouldStartBossDefeated } from '../game/devConfig.js';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/dimensions.js';
 import {
   createRuntimeSpriteAtlas,
@@ -33,6 +34,7 @@ import {
   subscribeAudioSettings,
 } from '../utils/audioSettings.js';
 import { FullscreenButton } from '../ui/FullscreenButton.js';
+import { isAppleTouchDevice } from '../utils/device.js';
 import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 import { loadHighScore, saveHighScore } from '../utils/storage.js';
 
@@ -49,10 +51,24 @@ const PLAYER_BODY_WIDTH = 320;
 const PLAYER_BODY_HEIGHT = 980;
 const PLAYER_FOOT_VISUAL_SINK = 30;
 const PLATFORM_SURFACE_HEIGHT = 72;
+const PLATFORM_NUMBER_LABEL_OFFSET = 18;
 const HUD_PANEL_WIDTH = 370;
 const HUD_PANEL_HEIGHT = 146;
 const HUD_TEXT_X = 34;
 const HUD_HELP_WRAP_WIDTH = HUD_PANEL_WIDTH - 32;
+const HUD_HELP_TEXT_KEYBOARD = 'A/D oder Pfeile bewegen  Space springt  R respawn';
+const HUD_HELP_TEXT_GAMEPAD = 'Stick oder D-Pad bewegen  A springt  Start respawn';
+const HUD_HELP_TEXT_TOUCH = 'Touch bewegen  Touch springt';
+const CHECKPOINT_TEXTURE_WIDTH = 52;
+const CHECKPOINT_TEXTURE_HEIGHT = 56;
+const CHECKPOINT_PLATFORM_EDGE_PADDING = Math.ceil(CHECKPOINT_TEXTURE_WIDTH / 2) + 10;
+const CHECKPOINT_PLATFORM_SNAP_DISTANCE = 96;
+const FINAL_TREASURE_LEVEL_ID = 6;
+const TREASURE_BOX_ANIMATION_KEY = 'treasure-box-open-animation';
+const TREASURE_BOX_DISPLAY_WIDTH = 128;
+const TREASURE_BOX_FOOT_SINK = 18;
+const TREASURE_REVEAL_MAX_WIDTH = 1085;
+const TREASURE_REVEAL_MAX_HEIGHT = 525;
 const TOUCH_CONTROLS_DEPTH = 130;
 const TOUCH_CONTROLS_IDLE_ALPHA = 0.56;
 const TOUCH_CONTROLS_ACTIVE_ALPHA = 0.88;
@@ -74,6 +90,9 @@ const BOSS_BODY_HEIGHT_RATIO = 0.24;
 const BOSS_BODY_VERTICAL_SHIFT_RATIO = 0;
 const BOSS_INTRO_MS = 6000;
 const BOSS_HIT_BOUNCE = -520;
+const BOSS_POST_HIT_SHIFT_MIN = 70;
+const BOSS_POST_HIT_SHIFT_MAX = 120;
+const BOSS_POST_HIT_SHIFT_DURATION_MS = 180;
 const BOSS_STOMP_MIN_HEIGHT = 20;
 const BOSS_STOMP_MAX_HEIGHT = 112;
 const BOSS_STOMP_EXTRA_WIDTH = 24;
@@ -156,6 +175,8 @@ const PAINT_PUDDLE_STEP_HORIZONTAL_INSET = 10;
 const TREE_ATTACK_ANIMATION_KEY = 'tree-hit';
 const TREE_DISPLAY_HEIGHT = 175;
 const TREE_FOOT_SINK = 18;
+const TREE_ATTACK_BOX_WIDTH_MULTIPLIER = 0.78;
+const TREE_ATTACK_BOX_HEIGHT = 78;
 const TREE_NORMAL_ATTACK_CHANCE = 0.45;
 const TREE_NORMAL_COIN_PENALTY = 1;
 const TREE_BOSS_ATTACK_CHANCE = 0.65;
@@ -166,8 +187,8 @@ const TREE_NORMAL_BOSS_PADDING = 220;
 const TREE_BOSS_DAMAGE = 1;
 const TREE_BOSS_MAX_ACTIVE = 2;
 const TREE_BOSS_SPAWN_INITIAL_DELAY_MS = 1500;
-const TREE_BOSS_SPAWN_MIN_DELAY_MS = 3400;
-const TREE_BOSS_SPAWN_MAX_DELAY_MS = 5600;
+const TREE_BOSS_SPAWN_MIN_DELAY_MS = 4250;
+const TREE_BOSS_SPAWN_MAX_DELAY_MS = 7000;
 const TREE_BOSS_LIFETIME_MS = 8000;
 const TREE_BOSS_FADE_MS = 280;
 const TREE_BOSS_ARENA_MARGIN = 170;
@@ -201,6 +222,9 @@ const PHASE_TWO_BOSS_ID = 6;
 const PHASE_TWO_SPECIAL_ATTACK_DAMAGE = 3;
 const RETRY_RESTART_OPTION = 0;
 const RETRY_RETRY_OPTION = 1;
+const BOSS_RETRY_EASE_STEP = 0.1;
+const BOSS_RETRY_EASE_MAX = 0.6;
+const BOSS_RETRY_EASE_START_RETRY = 2;
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -219,6 +243,9 @@ export class LevelScene extends Phaser.Scene {
     }
     this.respawnPoint = this.resolveRespawnPoint(this.level.spawn);
     this.levelComplete = false;
+    this.finalTreasureSequenceActive = false;
+    this.finalTreasureReady = false;
+    this.finalTreasureContinueHandler = null;
     this.isRespawning = false;
     this.lastGroundedAt = 0;
     this.bossState = 'stand';
@@ -231,6 +258,7 @@ export class LevelScene extends Phaser.Scene {
     this.awaitingBossRetry = false;
     this.playerIsHit = false;
     this.playerBossContactDamageArmed = true;
+    this.playerBossStompConsumed = false;
     this.bossIsHit = false;
     this.levelCoinHpBonus = 0;
     this.levelBallsCollected = 0;
@@ -241,6 +269,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossPhase = 1;
     this.bossShieldMax = 0;
     this.bossShieldHp = 0;
+    this.bossRetryCount = 0;
     this.nextBossAttackAt = 0;
     this.nextBossContactDamageAt = 0;
     this.bossDirection = -1;
@@ -319,8 +348,11 @@ export class LevelScene extends Phaser.Scene {
     this.createTouchControls();
     this.configureCollisions();
     this.configureCamera();
+    const devBossDefeatedStarted = this.applyDevBossDefeatedStart();
     refreshGamepads(this);
-    this.showToast(`Level ${this.level.id}: ${this.level.name}`);
+    if (!devBossDefeatedStarted) {
+      this.showToast(`Level ${this.level.id}: ${this.level.name}`);
+    }
   }
 
   createLevelMusicControls() {
@@ -445,11 +477,30 @@ export class LevelScene extends Phaser.Scene {
   }
 
   supportsTouchControls() {
-    const maxTouchPoints = typeof navigator !== 'undefined'
-      ? navigator.maxTouchPoints ?? 0
-      : 0;
+    return isAppleTouchDevice();
+  }
 
-    return maxTouchPoints > 0 || Boolean(this.sys.game.device.input.touch);
+  getHudHelpText() {
+    if (this.gamepadInput?.connected) {
+      return HUD_HELP_TEXT_GAMEPAD;
+    }
+
+    if (this.supportsTouchControls() && !this.touchControlsSuppressedByHardwareInput) {
+      return HUD_HELP_TEXT_TOUCH;
+    }
+
+    return HUD_HELP_TEXT_KEYBOARD;
+  }
+
+  updateHudHelpText() {
+    const helpText = this.getHudHelpText();
+
+    if (this.currentHudHelpText === helpText) {
+      return;
+    }
+
+    this.currentHudHelpText = helpText;
+    this.helpText?.setText(helpText);
   }
 
   shouldShowTouchControls() {
@@ -811,6 +862,46 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  applyDevBossDefeatedStart() {
+    if (!shouldStartBossDefeated()) {
+      return false;
+    }
+
+    if (this.hasBossPhaseTwo()) {
+      this.bossPhase = 2;
+      this.ensureBossAnimations();
+    }
+
+    this.bossHp = 0;
+    this.bossShieldHp = 0;
+    this.defeatBoss();
+    this.placePlayerAtDefeatedBossStart();
+    this.respawnPoint = {
+      x: this.player.x,
+      y: this.player.y,
+    };
+    this.showToast('Debug: Boss bereits besiegt');
+    return true;
+  }
+
+  placePlayerAtDefeatedBossStart() {
+    const x = Math.max(
+      this.level.boss.arenaLeft + 140,
+      this.level.goal.x - 180,
+    );
+    const y = this.level.boss.floorY + PLAYER_ARENA_FOOT_SINK;
+
+    this.player.setPosition(x, y);
+    this.player.body.reset(x, y);
+    this.player.setVelocity(0, 0);
+    this.player.setFlipX(false);
+    this.player.stop();
+    setSpriteTexture(this.player, 'char-stand');
+    this.playerState = 'stand';
+    this.configurePlayerBody();
+    this.cameras.main.centerOn(x, y - GAME_HEIGHT * 0.15);
+  }
+
   applyVoiceVolumes() {
     const voiceVolume = getAudioChannelVolume(AUDIO_CHANNELS.voice);
 
@@ -874,7 +965,9 @@ export class LevelScene extends Phaser.Scene {
   createPlatforms() {
     this.platforms = this.physics.add.staticGroup();
 
-    this.level.platforms.forEach((platform) => {
+    const showPlatformNumbers = shouldShowPlatformNumbers();
+
+    this.level.platforms.forEach((platform, index) => {
       const block = this.platforms.create(
         platform.x,
         platform.y,
@@ -888,7 +981,29 @@ export class LevelScene extends Phaser.Scene {
         .setVisible(false);
 
       this.createPlatformVisual(platform);
+
+      if (showPlatformNumbers) {
+        this.createPlatformNumberLabel(platform, index);
+      }
     });
+  }
+
+  createPlatformNumberLabel(platform, index) {
+    const labelY = platform.height > PLATFORM_SURFACE_HEIGHT
+      ? platform.y + PLATFORM_NUMBER_LABEL_OFFSET
+      : platform.y + platform.height + PLATFORM_NUMBER_LABEL_OFFSET;
+
+    this.add
+      .text(platform.x + platform.width / 2, labelY, `P${index + 1}`, {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '18px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        backgroundColor: '#1d1d1dcc',
+        padding: { x: 6, y: 3 },
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(30);
   }
 
   createPlatformVisual(platform) {
@@ -1016,16 +1131,17 @@ export class LevelScene extends Phaser.Scene {
     this.checkpoints = this.physics.add.staticGroup();
 
     this.level.checkpoints.forEach((entry, index) => {
+      const placement = this.resolveCheckpointPlacement(entry);
       const checkpoint = this.checkpoints.create(
-        entry.x,
-        entry.y + 56,
+        placement.x,
+        placement.y,
         ...getTextureArgs('checkpoint'),
       );
 
       checkpoint
         .setOrigin(0.5, 1)
         .setDepth(7)
-        .setData('spawn', this.resolveRespawnPoint(entry))
+        .setData('spawn', this.resolveRespawnPoint(placement))
         .setData('label', entry.label)
         .setData('activated', false)
         .setTint(index === 0 ? 0xffb39d : 0xffffff);
@@ -1035,26 +1151,63 @@ export class LevelScene extends Phaser.Scene {
       checkpoint.body.setSize(CHECKPOINT_TRIGGER_WIDTH, GAME_HEIGHT);
       checkpoint.body.setOffset(
         checkpoint.displayOriginX - CHECKPOINT_TRIGGER_WIDTH / 2,
-        -entry.y,
+        CHECKPOINT_TEXTURE_HEIGHT - placement.y,
       );
     });
   }
 
   createGoal() {
-    this.goal = this.physics.add.staticImage(
-      this.level.goal.x,
-      this.level.goal.y + this.level.goal.height,
-      ...getTextureArgs('goal'),
-    );
-    this.goal.setData('logicalTextureKey', 'goal');
+    const textureKey = this.shouldUseTreasureGoal()
+      ? 'treasure-box-closed'
+      : 'goal';
+    const displaySize = this.getGoalDisplaySize();
+    const goalY = this.level.goal.y + this.level.goal.height + this.getGoalFootSink();
+
+    this.goal = this.shouldUseTreasureGoal()
+      ? this.physics.add.staticSprite(
+          this.level.goal.x,
+          goalY,
+          ...getTextureArgs(textureKey),
+        )
+      : this.physics.add.staticImage(
+          this.level.goal.x,
+          goalY,
+          ...getTextureArgs(textureKey),
+        );
+    this.goal.setData('logicalTextureKey', textureKey);
 
     this.goal
       .setOrigin(0.5, 1)
-      .setDisplaySize(this.level.goal.width, this.level.goal.height)
+      .setDisplaySize(displaySize.width, displaySize.height)
       .setDepth(7)
       .refreshBody();
 
     this.goal.disableBody(true, true);
+  }
+
+  shouldUseTreasureGoal() {
+    return this.level.id === FINAL_TREASURE_LEVEL_ID;
+  }
+
+  getGoalDisplaySize() {
+    if (!this.shouldUseTreasureGoal()) {
+      return {
+        width: this.level.goal.width,
+        height: this.level.goal.height,
+      };
+    }
+
+    const texture = this.textures.get('treasure-box-open');
+    const sourceImage = texture.getSourceImage();
+
+    return {
+      width: TREASURE_BOX_DISPLAY_WIDTH,
+      height: Math.round(TREASURE_BOX_DISPLAY_WIDTH * (sourceImage.height / sourceImage.width)),
+    };
+  }
+
+  getGoalFootSink() {
+    return this.shouldUseTreasureGoal() ? TREASURE_BOX_FOOT_SINK : 0;
   }
 
   createBoss() {
@@ -1196,7 +1349,7 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(101);
 
     this.helpText = this.add
-      .text(HUD_TEXT_X, 108, 'A/D, Pfeile, Stick, D-Pad oder Touch bewegen  Space/A/Touch springt  R/Start respawn', {
+      .text(HUD_TEXT_X, 108, '', {
         fontFamily: 'Verdana, sans-serif',
         fontSize: '14px',
         color: '#ffffff',
@@ -1221,6 +1374,7 @@ export class LevelScene extends Phaser.Scene {
       .setAlpha(0);
 
     this.refreshHud();
+    this.updateHudHelpText();
     this.updateLevelHudVisibility();
   }
 
@@ -1239,7 +1393,8 @@ export class LevelScene extends Phaser.Scene {
       this.bossIntroActive ||
       this.bossCountdownActive ||
       this.bossFightActive ||
-      this.awaitingBossRetry
+      this.awaitingBossRetry ||
+      this.finalTreasureSequenceActive
     );
 
     this.setLevelHudVisible(visible);
@@ -1654,7 +1809,7 @@ export class LevelScene extends Phaser.Scene {
       this.player,
       this.trees,
       this.handleTreeOverlap,
-      null,
+      this.isPlayerInTreeAttackBox,
       this,
     );
   }
@@ -1676,6 +1831,7 @@ export class LevelScene extends Phaser.Scene {
     this.updateTouchControlsVisibility();
     this.gamepadInput = readGamepadInput(this, this.gamepadButtons);
     this.gamepadButtons = this.gamepadInput.buttons;
+    this.updateHudHelpText();
 
     if (this.levelComplete) {
       this.player.setVelocityX(0);
@@ -1823,6 +1979,7 @@ export class LevelScene extends Phaser.Scene {
 
     if (!jumpedThisFrame && groundedNow && body.velocity.y >= 0) {
       this.lastGroundedAt = this.time.now;
+      this.playerBossStompConsumed = false;
     }
 
     const groundedRecently = this.time.now - this.lastGroundedAt <= GROUNDED_GRACE_MS;
@@ -1911,6 +2068,7 @@ export class LevelScene extends Phaser.Scene {
     this.awaitingBossRetry = false;
     this.bossState = 'patrol';
     this.playerBossContactDamageArmed = true;
+    this.playerBossStompConsumed = false;
     this.clearPaintPuddles();
     this.clearBossTrees();
     this.clearFirstAidKits();
@@ -1990,6 +2148,7 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    this.bossRetryCount += 1;
     this.awaitingBossRetry = false;
     this.bossIntroActive = true;
     this.bossState = 'intro';
@@ -2022,6 +2181,27 @@ export class LevelScene extends Phaser.Scene {
       levelStartScore: this.levelStartScore,
       highScore: this.highScore,
     });
+  }
+
+  getBossRetryEaseRatio() {
+    const easedRetryCount = Math.max(
+      0,
+      this.bossRetryCount - BOSS_RETRY_EASE_START_RETRY + 1,
+    );
+
+    return Phaser.Math.Clamp(
+      easedRetryCount * BOSS_RETRY_EASE_STEP,
+      0,
+      BOSS_RETRY_EASE_MAX,
+    );
+  }
+
+  getEasedBossChance(baseChance) {
+    return baseChance * (1 - this.getBossRetryEaseRatio());
+  }
+
+  getEasedBossCooldown(baseCooldown) {
+    return Math.round(baseCooldown * (1 + this.getBossRetryEaseRatio()));
   }
 
   placePlayerAtBossStart() {
@@ -2654,7 +2834,14 @@ export class LevelScene extends Phaser.Scene {
   }
 
   checkBossStomp() {
-    if (!this.bossFightActive || this.bossDefeated || this.bossIntroActive || this.bossIsHit || this.bossState === 'dodge') {
+    if (
+      !this.bossFightActive ||
+      this.bossDefeated ||
+      this.bossIntroActive ||
+      this.bossIsHit ||
+      this.playerBossStompConsumed ||
+      this.bossState === 'dodge'
+    ) {
       return;
     }
 
@@ -2675,7 +2862,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   resolveBossStompAttempt() {
-    if (!this.isPlayerInBossStompZone()) {
+    if (this.playerBossStompConsumed || !this.isPlayerInBossStompZone()) {
       return false;
     }
 
@@ -2693,7 +2880,7 @@ export class LevelScene extends Phaser.Scene {
     if (
       this.time.now < this.nextBossDodgeAt ||
       this.bossState === 'charge' ||
-      Math.random() > (bossConfig.dodgeChance ?? 0)
+      Math.random() > this.getEasedBossChance(bossConfig.dodgeChance ?? 0)
     ) {
       return false;
     }
@@ -2712,7 +2899,9 @@ export class LevelScene extends Phaser.Scene {
     this.nextBossDodgeAt = this.time.now + (bossConfig.dodgeCooldown ?? 1200);
     this.nextBossAttackAt = Math.max(
       this.nextBossAttackAt,
-      this.time.now + (bossConfig.dodgeAttackCooldown ?? bossConfig.attackCooldown),
+      this.time.now + this.getEasedBossCooldown(
+        bossConfig.dodgeAttackCooldown ?? bossConfig.attackCooldown,
+      ),
     );
     this.nextBossContactDamageAt = Math.max(
       this.nextBossContactDamageAt,
@@ -2789,7 +2978,7 @@ export class LevelScene extends Phaser.Scene {
     this.setBossAnimationTimeScale(1);
     this.boss.play(attackConfig.animationKey, true);
     this.alignBossToFloor();
-    this.nextBossAttackAt = this.time.now + bossConfig.attackCooldown;
+    this.nextBossAttackAt = this.time.now + this.getEasedBossCooldown(bossConfig.attackCooldown);
     this.scheduleBossAttackProjectile(attackConfig);
 
     this.boss.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
@@ -2838,8 +3027,8 @@ export class LevelScene extends Phaser.Scene {
     return Boolean(bossConfig.specialAttackChance ?? CARD_SPREAD_ATTACK_CHANCE) &&
       this.anims.exists(this.getBossKey('attack-special')) &&
       this.textures.exists(this.getBossKey('shot-special')) &&
-      Math.random() <= this.getBossSpecialAttackChance(
-        bossConfig.specialAttackChance ?? CARD_SPREAD_ATTACK_CHANCE,
+      Math.random() <= this.getEasedBossChance(
+        this.getBossSpecialAttackChance(bossConfig.specialAttackChance ?? CARD_SPREAD_ATTACK_CHANCE),
       );
   }
 
@@ -2899,7 +3088,9 @@ export class LevelScene extends Phaser.Scene {
   shouldStartBossChargeAttack() {
     return this.level.id === CHARGE_ATTACK_BOSS_ID &&
       this.anims.exists(this.getBossKey('charge')) &&
-      Math.random() <= this.getBossSpecialAttackChance(CHARGE_ATTACK_CHANCE);
+      Math.random() <= this.getEasedBossChance(
+        this.getBossSpecialAttackChance(CHARGE_ATTACK_CHANCE),
+      );
   }
 
   startBossChargeAttack() {
@@ -2915,7 +3106,8 @@ export class LevelScene extends Phaser.Scene {
     this.setBossAnimationTimeScale(1);
     this.boss.play(this.getBossKey('charge'), true);
     this.alignBossToFloor();
-    this.nextBossAttackAt = this.time.now + this.getBossConfig().attackCooldown;
+    this.nextBossAttackAt = this.time.now +
+      this.getEasedBossCooldown(this.getBossConfig().attackCooldown);
 
     this.time.delayedCall(CHARGE_ATTACK_WINDUP_MS, () => {
       if (
@@ -2970,7 +3162,9 @@ export class LevelScene extends Phaser.Scene {
     const bossConfig = attackConfig;
     const textureKey = attackConfig.projectileTextureKey ?? this.getBossKey('shot');
     const useCardSpread = this.shouldUseBossCardSpread() &&
-      Math.random() <= this.getBossSpecialAttackChance(CARD_SPREAD_ATTACK_CHANCE);
+      Math.random() <= this.getEasedBossChance(
+        this.getBossSpecialAttackChance(CARD_SPREAD_ATTACK_CHANCE),
+      );
 
     this.playBossShotSfx();
 
@@ -3109,23 +3303,34 @@ export class LevelScene extends Phaser.Scene {
   }
 
   isPlayerOverlappingTree(tree) {
-    if (!tree?.body?.enable || !this.player?.body) {
+    return this.isPlayerInTreeAttackBox(this.player, tree);
+  }
+
+  getTreeAttackBox(tree) {
+    const width = tree.displayWidth * TREE_ATTACK_BOX_WIDTH_MULTIPLIER;
+    const height = TREE_ATTACK_BOX_HEIGHT;
+
+    return new Phaser.Geom.Rectangle(
+      tree.x - width / 2,
+      tree.y - height,
+      width,
+      height,
+    );
+  }
+
+  isPlayerInTreeAttackBox(player, tree) {
+    if (!tree?.active || !tree?.body?.enable || !player?.body) {
       return false;
     }
 
     return Phaser.Geom.Intersects.RectangleToRectangle(
       new Phaser.Geom.Rectangle(
-        this.player.body.x,
-        this.player.body.y,
-        this.player.body.width,
-        this.player.body.height,
+        player.body.x,
+        player.body.y,
+        player.body.width,
+        player.body.height,
       ),
-      new Phaser.Geom.Rectangle(
-        tree.body.x,
-        tree.body.y,
-        tree.body.width,
-        tree.body.height,
-      ),
+      this.getTreeAttackBox(tree),
     );
   }
 
@@ -3174,7 +3379,7 @@ export class LevelScene extends Phaser.Scene {
     }
 
     const tree = this.createTree(x, bossConfig.floorY, {
-      attackChance: TREE_BOSS_ATTACK_CHANCE,
+      attackChance: this.getEasedBossChance(TREE_BOSS_ATTACK_CHANCE),
       bossTree: true,
     });
     tree.setAlpha(0);
@@ -3371,7 +3576,10 @@ export class LevelScene extends Phaser.Scene {
 
       tree.setData('checked', true);
 
-      if (Math.random() > (tree.getData('attackChance') ?? TREE_BOSS_ATTACK_CHANCE)) {
+      const attackChance = tree.getData('attackChance') ??
+        this.getEasedBossChance(TREE_BOSS_ATTACK_CHANCE);
+
+      if (Math.random() > attackChance) {
         return;
       }
 
@@ -3540,6 +3748,61 @@ export class LevelScene extends Phaser.Scene {
       .sort((a, b) => Math.abs(a - this.level.boss.floorY) - Math.abs(b - this.level.boss.floorY))[0];
   }
 
+  resolveCheckpointPlacement(entry) {
+    const platform = this.getCheckpointPlatform(entry);
+
+    if (!platform) {
+      return {
+        x: entry.x,
+        y: entry.y + CHECKPOINT_TEXTURE_HEIGHT,
+      };
+    }
+
+    const minX = platform.x + CHECKPOINT_PLATFORM_EDGE_PADDING;
+    const maxX = platform.x + platform.width - CHECKPOINT_PLATFORM_EDGE_PADDING;
+    const x = minX <= maxX
+      ? Phaser.Math.Clamp(entry.x, minX, maxX)
+      : platform.x + platform.width / 2;
+
+    return {
+      x,
+      y: platform.y,
+    };
+  }
+
+  getCheckpointPlatform(entry) {
+    const preferredTop = Number.isFinite(entry.y)
+      ? entry.y + CHECKPOINT_TEXTURE_HEIGHT
+      : null;
+
+    return this.level.platforms
+      .map((platform) => {
+        const platformRight = platform.x + platform.width;
+        const distance = entry.x < platform.x
+          ? platform.x - entry.x
+          : Math.max(0, entry.x - platformRight);
+
+        return { platform, distance };
+      })
+      .filter(({ distance }) => distance <= CHECKPOINT_PLATFORM_SNAP_DISTANCE)
+      .sort((left, right) => {
+        const distanceDiff = left.distance - right.distance;
+        if (distanceDiff !== 0) {
+          return distanceDiff;
+        }
+
+        if (preferredTop !== null) {
+          const leftTopDiff = Math.abs(left.platform.y - preferredTop);
+          const rightTopDiff = Math.abs(right.platform.y - preferredTop);
+          if (leftTopDiff !== rightTopDiff) {
+            return leftTopDiff - rightTopDiff;
+          }
+        }
+
+        return right.platform.width - left.platform.width;
+      })[0]?.platform ?? null;
+  }
+
   spawnPaintPuddle(x, platformTop) {
     if (
       !this.shouldUseBossPaintPuddles() ||
@@ -3702,6 +3965,7 @@ export class LevelScene extends Phaser.Scene {
 
     const playerCanHit =
       !this.bossIsHit &&
+      !this.playerBossStompConsumed &&
       player.body.velocity.y > 80 &&
       this.isPlayerInBossStompZone();
 
@@ -3759,6 +4023,7 @@ export class LevelScene extends Phaser.Scene {
     }
 
     this.bossIsHit = true;
+    this.playerBossStompConsumed = true;
     this.playBossHittedSfx();
     this.bossState = 'hit';
     this.boss.setVelocityX(0);
@@ -3778,6 +4043,8 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    this.shiftBossAfterHit();
+
     this.time.delayedCall(BOSS_HIT_LOCK_MS, () => {
       this.bossIsHit = false;
       if (this.bossFightActive && !this.bossDefeated) {
@@ -3785,6 +4052,34 @@ export class LevelScene extends Phaser.Scene {
         this.alignBossToFloor();
         this.bossState = 'patrol';
       }
+    });
+  }
+
+  shiftBossAfterHit() {
+    const bossConfig = this.getBossConfig();
+    const minX = bossConfig.arenaLeft + BOSS_DODGE_EDGE_MARGIN;
+    const maxX = bossConfig.arenaRight - BOSS_DODGE_EDGE_MARGIN;
+    const awayFromPlayer = this.player.x < this.boss.x ? 1 : -1;
+    const distance = Phaser.Math.Between(BOSS_POST_HIT_SHIFT_MIN, BOSS_POST_HIT_SHIFT_MAX);
+    let targetX = Phaser.Math.Clamp(this.boss.x + awayFromPlayer * distance, minX, maxX);
+
+    if (Math.abs(targetX - this.boss.x) < BOSS_POST_HIT_SHIFT_MIN * 0.5) {
+      targetX = Phaser.Math.Clamp(this.boss.x - awayFromPlayer * distance, minX, maxX);
+    }
+
+    this.bossDirection = targetX < this.boss.x ? -1 : 1;
+    this.boss.setFlipX(this.bossDirection < 0);
+    this.tweens.killTweensOf(this.boss);
+    this.tweens.add({
+      targets: this.boss,
+      x: targetX,
+      duration: BOSS_POST_HIT_SHIFT_DURATION_MS,
+      ease: 'Quad.out',
+      onUpdate: () => this.alignBossToFloor(),
+      onComplete: () => {
+        this.alignBossToFloor();
+        this.configureBossBody();
+      },
     });
   }
 
@@ -3898,6 +4193,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossIntroActive = false;
     this.bossCountdownActive = false;
     this.bossIsHit = false;
+    this.playerBossStompConsumed = false;
     this.bossState = 'defeated';
     this.boss.setVelocity(0, 0);
     this.boss.body.enable = false;
@@ -3929,6 +4225,7 @@ export class LevelScene extends Phaser.Scene {
     this.bossIntroActive = true;
     this.bossCountdownActive = false;
     this.bossIsHit = false;
+    this.playerBossStompConsumed = false;
     this.bossState = 'intro';
     this.nextBossAttackAt = 0;
     this.nextBossContactDamageAt = 0;
@@ -3965,6 +4262,7 @@ export class LevelScene extends Phaser.Scene {
     this.awaitingBossRetry = true;
     this.playerIsHit = false;
     this.playerBossContactDamageArmed = true;
+    this.playerBossStompConsumed = false;
     this.bossIsHit = false;
     this.bossState = 'stand';
     this.nextBossAttackAt = 0;
@@ -4157,6 +4455,15 @@ export class LevelScene extends Phaser.Scene {
       return;
     }
 
+    if (this.shouldUseTreasureGoal()) {
+      this.startFinalTreasureSequence();
+      return;
+    }
+
+    this.finishLevel();
+  }
+
+  finishLevel() {
     this.levelComplete = true;
     this.player.setVelocity(0, 0);
     this.player.body.enable = false;
@@ -4191,6 +4498,118 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  startFinalTreasureSequence() {
+    if (this.finalTreasureSequenceActive) {
+      return;
+    }
+
+    this.finalTreasureSequenceActive = true;
+    this.levelComplete = true;
+    this.player.setVelocity(0, 0);
+    this.player.stop();
+    setSpriteTexture(this.player, 'char-stand');
+    this.playerState = 'stand';
+    this.player.setFlipX(false);
+    this.player.body.enable = false;
+    this.setLevelHudVisible(false);
+
+    if (this.score > this.highScore) {
+      this.highScore = this.score;
+      saveHighScore(this.highScore);
+    }
+
+    this.refreshHud();
+    this.openFinalTreasureBox();
+  }
+
+  openFinalTreasureBox() {
+    const showTreasure = () => {
+      setSpriteTexture(this.goal, 'treasure-box-open');
+      const displaySize = this.getGoalDisplaySize();
+      this.goal.setDisplaySize(displaySize.width, displaySize.height);
+      this.goal.refreshBody();
+      this.showFinalTreasureReveal();
+    };
+
+    if (this.goal?.play && this.anims.exists(TREASURE_BOX_ANIMATION_KEY)) {
+      this.goal.play(TREASURE_BOX_ANIMATION_KEY, true);
+      this.goal.once(Phaser.Animations.Events.ANIMATION_COMPLETE, showTreasure);
+      return;
+    }
+
+    showTreasure();
+  }
+
+  showFinalTreasureReveal() {
+    const treasureImage = this.add
+      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, ...getTextureArgs('treasure'))
+      .setScrollFactor(0)
+      .setDepth(220)
+      .setScale(0.08);
+    treasureImage.setData('logicalTextureKey', 'treasure');
+
+    const sourceImage = this.textures.get('treasure').getSourceImage();
+    const targetScale = Math.min(
+      TREASURE_REVEAL_MAX_WIDTH / sourceImage.width,
+      TREASURE_REVEAL_MAX_HEIGHT / sourceImage.height,
+    );
+
+    this.tweens.add({
+      targets: treasureImage,
+      scale: targetScale,
+      duration: 820,
+      ease: 'Back.out',
+      onComplete: () => {
+        this.finalTreasureReady = true;
+      },
+    });
+
+    this.add
+      .text(GAME_WIDTH - 36, GAME_HEIGHT - 36, 'Weiter mit Space', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '24px',
+        fontStyle: 'bold',
+        color: '#ffffff',
+        stroke: '#102237',
+        strokeThickness: 6,
+      })
+      .setOrigin(1, 1)
+      .setScrollFactor(0)
+      .setDepth(221);
+
+    this.finalTreasureContinueHandler = () => {
+      if (!this.finalTreasureReady) {
+        return;
+      }
+
+      this.finishFinalTreasureSequence();
+    };
+    this.input.keyboard.on('keydown-SPACE', this.finalTreasureContinueHandler);
+  }
+
+  finishFinalTreasureSequence() {
+    if (!this.finalTreasureSequenceActive || !this.finalTreasureReady) {
+      return;
+    }
+
+    if (this.finalTreasureContinueHandler) {
+      this.input.keyboard.off('keydown-SPACE', this.finalTreasureContinueHandler);
+      this.finalTreasureContinueHandler = null;
+    }
+
+    this.finalTreasureReady = false;
+    this.showToast(`Level ${this.level.id} geschafft!`);
+    this.cameras.main.flash(450, 255, 255, 255);
+
+    this.time.delayedCall(600, () => {
+      MusicControls.stopSharedAudio(LEVEL_MUSIC_KEY);
+      this.scene.start('EndScene', {
+        score: this.score,
+        highScore: this.highScore,
+      });
+    });
+  }
+
   respawnPlayer(isManual, message = null) {
     if (this.isRespawning || this.levelComplete) {
       return;
@@ -4207,6 +4626,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.player.body.reset(this.respawnPoint.x, this.respawnPoint.y);
     this.playerBossContactDamageArmed = true;
+    this.playerBossStompConsumed = false;
     this.playerSlowUntil = 0;
     this.playerJumpBlockedUntil = 0;
     this.player.setVelocity(0, 0);
