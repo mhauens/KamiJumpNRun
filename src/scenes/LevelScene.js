@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import introMusicMp3Url from '../../assets/shared/KamisWorldIntro.mp3';
+import introMusicOggUrl from '../../assets/shared/KamisWorldIntro.ogg';
 import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
 import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
 import bossHittedSfxMp3Url from '../../assets/shared/sfx/boss_hitted.mp3';
@@ -136,6 +138,8 @@ const CRIT_HIT_DISPLAY_WIDTH = 320;
 const CRIT_HIT_Y = 112;
 const LEVEL_MUSIC_KEY = 'kamis-world-level';
 const LEVEL_MUSIC_VOLUME = 0.05;
+const INTRO_MUSIC_KEY = 'kamis-world-intro';
+const INTRO_MUSIC_VOLUME = 0.15;
 const LEVEL_MUSIC_PANEL_WIDTH = 424;
 const LEVEL_MUSIC_PANEL_MARGIN = 34;
 const FULLSCREEN_BUTTON_GAP = 10;
@@ -246,6 +250,7 @@ export class LevelScene extends Phaser.Scene {
     this.finalTreasureSequenceActive = false;
     this.finalTreasureReady = false;
     this.finalTreasureContinueHandler = null;
+    this.finalTreasureMusic = null;
     this.isRespawning = false;
     this.lastGroundedAt = 0;
     this.bossState = 'stand';
@@ -322,6 +327,7 @@ export class LevelScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.stopBossSplashSound();
       this.stopRetrySound();
+      this.stopFinalTreasureMusic();
       this.destroyTouchControls();
       this.destroyBossSplashSoundPool();
       this.unsubscribeLevelDataUpdates?.();
@@ -752,6 +758,10 @@ export class LevelScene extends Phaser.Scene {
   }
 
   loadSfxAudio() {
+    if (!this.cache.audio.exists(INTRO_MUSIC_KEY)) {
+      this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
+    }
+
     if (!this.cache.audio.exists(COIN_SFX_KEY)) {
       this.load.audio(COIN_SFX_KEY, [coinSfxOggUrl, coinSfxMp3Url]);
     }
@@ -859,6 +869,7 @@ export class LevelScene extends Phaser.Scene {
   watchAudioSettings() {
     this.unsubscribeAudioSettings = subscribeAudioSettings(() => {
       this.applyVoiceVolumes();
+      this.applyFinalTreasureMusicVolume();
     });
   }
 
@@ -4512,6 +4523,7 @@ export class LevelScene extends Phaser.Scene {
     this.player.setFlipX(false);
     this.player.body.enable = false;
     this.setLevelHudVisible(false);
+    this.playFinalTreasureMusic();
 
     if (this.score > this.highScore) {
       this.highScore = this.score;
@@ -4538,6 +4550,51 @@ export class LevelScene extends Phaser.Scene {
     }
 
     showTreasure();
+  }
+
+  stopLevelMusic() {
+    this.musicControls?.panel?.setVisible(false);
+    this.musicControls?.destroy({ stopAudio: true });
+    this.musicControls = null;
+    MusicControls.stopSharedAudio(LEVEL_MUSIC_KEY);
+  }
+
+  playFinalTreasureMusic() {
+    this.stopLevelMusic();
+
+    if (this.sound.locked) {
+      this.sound.once(Phaser.Sound.Events.UNLOCKED, () => this.playFinalTreasureMusic());
+      return;
+    }
+
+    if (!this.cache.audio.exists(INTRO_MUSIC_KEY)) {
+      return;
+    }
+
+    this.stopFinalTreasureMusic();
+    this.finalTreasureMusic = this.sound.add(INTRO_MUSIC_KEY, {
+      loop: true,
+      volume: this.getFinalTreasureMusicVolume(),
+    });
+    this.finalTreasureMusic.play();
+  }
+
+  getFinalTreasureMusicVolume() {
+    return INTRO_MUSIC_VOLUME * getAudioChannelVolume(AUDIO_CHANNELS.music);
+  }
+
+  applyFinalTreasureMusicVolume() {
+    this.finalTreasureMusic?.setVolume(this.getFinalTreasureMusicVolume());
+  }
+
+  stopFinalTreasureMusic() {
+    if (!this.finalTreasureMusic) {
+      return;
+    }
+
+    this.finalTreasureMusic.stop();
+    this.finalTreasureMusic.destroy();
+    this.finalTreasureMusic = null;
   }
 
   showFinalTreasureReveal() {
