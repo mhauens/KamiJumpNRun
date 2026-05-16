@@ -176,6 +176,14 @@ const PAINT_PUDDLE_SPAWN_COOLDOWN_MS = 5000;
 const PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD = 128;
 const PAINT_PUDDLE_STEP_TOLERANCE = 18;
 const PAINT_PUDDLE_STEP_HORIZONTAL_INSET = 10;
+const CAKE_RAIN_PROJECTILE_COUNT = 8;
+const CAKE_RAIN_PROJECTILE_DELAY_MS = 115;
+const CAKE_RAIN_FALL_SPEED = 420;
+const CAKE_RAIN_SPAWN_TOP_PADDING = 34;
+const CAKE_RAIN_ARENA_MARGIN = 45;
+const CAKE_RAIN_LANE_JITTER_MULTIPLIER = 0.22;
+const CAKE_RAIN_BOSS_CLEAR_RADIUS = 170;
+const CAKE_RAIN_ROTATION_DEGREES = 90;
 const TREE_ATTACK_ANIMATION_KEY = 'tree-hit';
 const TREE_DISPLAY_HEIGHT = 175;
 const TREE_FOOT_SINK = 18;
@@ -267,14 +275,17 @@ export class LevelScene extends Phaser.Scene {
     this.bossIsHit = false;
     this.levelCoinHpBonus = 0;
     this.levelBallsCollected = 0;
-    this.playerMaxHp = BOSS_BASE_HP;
-    this.bossMaxHp = BOSS_BASE_HP + this.level.coins.length;
+    this.bossPhase = 1;
+    this.playerMaxHp = this.getPlayerBossMaxHp();
+    this.bossMaxHp = this.getBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
-    this.bossPhase = 1;
     this.bossShieldMax = 0;
     this.bossShieldHp = 0;
     this.bossRetryCount = 0;
+    this.bossEnrageActive = false;
+    this.bossEnrageAnnounced = false;
+    this.bossRainAttackActive = false;
     this.nextBossAttackAt = 0;
     this.nextBossContactDamageAt = 0;
     this.bossDirection = -1;
@@ -951,10 +962,74 @@ export class LevelScene extends Phaser.Scene {
       ? this.level.boss.phase2
       : {};
 
-    return {
+    const config = {
       ...this.level.boss,
       ...phaseOverrides,
     };
+
+    return this.applyBossEnrageConfig(config);
+  }
+
+  applyBossEnrageConfig(config) {
+    if (!this.isBossEnraged(config)) {
+      return config;
+    }
+
+    return {
+      ...config,
+      speed: config.speed * (config.enrageSpeedMultiplier ?? 1),
+      attackCooldown: Math.round(config.attackCooldown * (config.enrageCooldownMultiplier ?? 1)),
+      projectileSpeed: config.projectileSpeed * (config.enrageProjectileSpeedMultiplier ?? 1),
+      dodgeChance: Phaser.Math.Clamp(
+        (config.dodgeChance ?? 0) + (config.enrageDodgeChanceBonus ?? 0),
+        0,
+        0.9,
+      ),
+      specialAttackChance: this.getEnragedChance(
+        config.specialAttackChance,
+        config.enrageSpecialAttackChanceBonus,
+      ),
+      cardSpreadAttackChance: this.getEnragedChance(
+        config.cardSpreadAttackChance,
+        config.enrageCardSpreadAttackChanceBonus,
+      ),
+      cakeRainAttackChance: this.getEnragedChance(
+        config.cakeRainAttackChance,
+        config.enrageSpecialAttackChanceBonus,
+      ),
+      chargeAttackChance: this.getEnragedChance(
+        config.chargeAttackChance,
+        config.enrageChargeAttackChanceBonus,
+      ),
+    };
+  }
+
+  getEnragedChance(baseChance, bonus = 0) {
+    if (typeof baseChance !== 'number') {
+      return baseChance;
+    }
+
+    return Phaser.Math.Clamp(baseChance + bonus, 0, 0.9);
+  }
+
+  isBossEnraged(config = this.level.boss) {
+    if (!this.bossFightActive || this.bossDefeated || this.bossMaxHp <= 0) {
+      return false;
+    }
+
+    const threshold = config.enrageHealthRatio ?? 0;
+
+    return threshold > 0 && this.bossHp / this.bossMaxHp <= threshold;
+  }
+
+  updateBossEnrageState() {
+    const wasEnraged = this.bossEnrageActive;
+    this.bossEnrageActive = this.isBossEnraged();
+
+    if (!wasEnraged && this.bossEnrageActive && !this.bossEnrageAnnounced) {
+      this.bossEnrageAnnounced = true;
+      this.showToast('Boss wird aggressiv!');
+    }
   }
 
   createWorld() {
@@ -2080,12 +2155,16 @@ export class LevelScene extends Phaser.Scene {
     this.bossState = 'patrol';
     this.playerBossContactDamageArmed = true;
     this.playerBossStompConsumed = false;
+    this.bossEnrageActive = false;
+    this.bossEnrageAnnounced = false;
+    this.bossRainAttackActive = false;
     this.clearPaintPuddles();
     this.clearBossTrees();
     this.clearFirstAidKits();
     this.firstAidKitSpawnsThisFight = 0;
     this.nextFirstAidKitSpawnAt = this.time.now + FIRST_AID_KIT_SPAWN_INITIAL_DELAY_MS;
     this.playerMaxHp = this.getPlayerBossMaxHp();
+    this.bossMaxHp = this.getBossMaxHp();
     this.playerHp = this.playerMaxHp;
     this.bossHp = this.bossMaxHp;
     if (this.bossPhase === 2) {
@@ -2980,6 +3059,12 @@ export class LevelScene extends Phaser.Scene {
     }
 
     const bossConfig = this.getBossConfig();
+
+    if (this.shouldStartCakeRainAttack(bossConfig)) {
+      this.startCakeRainAttack(bossConfig);
+      return;
+    }
+
     const attackConfig = this.resolveBossAttackConfig(bossConfig);
 
     this.bossState = 'attack';
@@ -3043,9 +3128,139 @@ export class LevelScene extends Phaser.Scene {
       );
   }
 
+  shouldStartCakeRainAttack(bossConfig) {
+    if (typeof bossConfig.cakeRainAttackChance !== 'number') {
+      return false;
+    }
+
+    return Math.random() <= this.getEasedBossChance(
+      this.getBossSpecialAttackChance(bossConfig.cakeRainAttackChance),
+    );
+  }
+
+  startCakeRainAttack(bossConfig) {
+    const projectileCount = bossConfig.cakeRainProjectileCount ?? CAKE_RAIN_PROJECTILE_COUNT;
+    const projectileDelay = bossConfig.cakeRainProjectileDelay ?? CAKE_RAIN_PROJECTILE_DELAY_MS;
+    const fallSpeed = bossConfig.cakeRainFallSpeed ?? CAKE_RAIN_FALL_SPEED;
+    const rainDuration = this.getCakeRainAttackDuration(projectileCount, projectileDelay, fallSpeed);
+
+    this.bossRainAttackActive = true;
+    this.bossState = 'attack';
+    this.boss.setVelocityX(0);
+    this.boss.setFlipX(this.player.x < this.boss.x);
+    this.setBossScaleForAnimation(this.getBossKey('attack'));
+    this.setBossAnimationTimeScale(1);
+    this.boss.play(this.getBossKey('attack'), true);
+    this.alignBossToFloor();
+    this.nextBossAttackAt = this.time.now + Math.max(
+      this.getEasedBossCooldown(bossConfig.cakeRainCooldown ?? bossConfig.attackCooldown),
+      rainDuration,
+    );
+    this.playBossShotSfx();
+    this.showToast(bossConfig.cakeRainToast ?? 'Tortenregen!');
+
+    const laneOrder = Array.from({ length: projectileCount }, (_, laneIndex) => laneIndex);
+    Phaser.Utils.Array.Shuffle(laneOrder);
+
+    for (let index = 0; index < projectileCount; index += 1) {
+      this.time.delayedCall(index * projectileDelay, () => {
+        if (this.bossFightActive && !this.bossDefeated && !this.awaitingBossRetry) {
+          this.createCakeRainProjectile(bossConfig, laneOrder[index], projectileCount);
+        }
+      });
+    }
+
+    this.time.delayedCall(rainDuration, () => {
+      this.bossRainAttackActive = false;
+    });
+
+    this.boss.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!this.bossDefeated && this.bossFightActive) {
+        this.bossState = 'patrol';
+      }
+    });
+  }
+
+  getCakeRainAttackDuration(projectileCount, projectileDelay, fallSpeed) {
+    const spawnDuration = Math.max(0, projectileCount - 1) * projectileDelay;
+    const fallDistance = GAME_HEIGHT + 80 - CAKE_RAIN_SPAWN_TOP_PADDING;
+    const fallDuration = Math.ceil((fallDistance / Math.max(1, fallSpeed)) * 1000);
+
+    return spawnDuration + fallDuration;
+  }
+
+  createCakeRainProjectile(bossConfig, laneIndex, projectileCount) {
+    const textureKey = this.getBossKey('shot');
+    const minX = bossConfig.arenaLeft + CAKE_RAIN_ARENA_MARGIN;
+    const maxX = bossConfig.arenaRight - CAKE_RAIN_ARENA_MARGIN;
+    const laneSpacing = projectileCount > 1 ? (maxX - minX) / (projectileCount - 1) : 0;
+    const laneX = projectileCount > 1
+      ? minX + laneSpacing * laneIndex
+      : (minX + maxX) / 2;
+    const jitter = Math.round(laneSpacing * CAKE_RAIN_LANE_JITTER_MULTIPLIER);
+    const laneXWithJitter = Phaser.Math.Clamp(
+      laneX + Phaser.Math.Between(-jitter, jitter),
+      minX,
+      maxX,
+    );
+    const x = this.getCakeRainSpawnXOutsideBoss(
+      laneXWithJitter,
+      minX,
+      maxX,
+      bossConfig,
+    );
+    const y = Math.max(
+      CAKE_RAIN_SPAWN_TOP_PADDING,
+      bossConfig.floorY - GAME_HEIGHT + CAKE_RAIN_SPAWN_TOP_PADDING,
+    );
+    const projectile = this.projectiles
+      .create(x, y, ...getTextureArgs(textureKey))
+      .setOrigin(0.5)
+      .setScale(bossConfig.cakeRainShotScale ?? bossConfig.shotScale)
+      .setAngle(bossConfig.cakeRainShotAngle ?? CAKE_RAIN_ROTATION_DEGREES)
+      .setDepth(8);
+
+    projectile.body.setAllowGravity(false);
+    this.centerProjectileBody(projectile, textureKey, {
+      ...bossConfig,
+      shotBodyWidth: bossConfig.cakeRainShotBodyWidth ?? bossConfig.shotBodyWidth,
+      shotBodyHeight: bossConfig.cakeRainShotBodyHeight ?? bossConfig.shotBodyHeight,
+      shotBodyOffsetY: bossConfig.cakeRainShotBodyOffsetY ?? bossConfig.shotBodyOffsetY,
+    });
+    projectile.setVelocity(0, bossConfig.cakeRainFallSpeed ?? CAKE_RAIN_FALL_SPEED);
+    projectile.setData('cakeRain', true);
+    projectile.setData('damage', bossConfig.cakeRainDamage ?? bossConfig.damage);
+    projectile.setData('logicalTextureKey', textureKey);
+
+    return projectile;
+  }
+
+  getCakeRainSpawnXOutsideBoss(x, minX, maxX, bossConfig) {
+    const clearRadius = bossConfig.cakeRainBossClearRadius ?? Math.max(
+      CAKE_RAIN_BOSS_CLEAR_RADIUS,
+      this.boss.displayWidth * 0.35,
+    );
+    const clearLeft = this.boss.x - clearRadius;
+    const clearRight = this.boss.x + clearRadius;
+
+    if (x < clearLeft || x > clearRight) {
+      return x;
+    }
+
+    const pushLeft = clearLeft - minX > maxX - clearRight;
+    const safeX = pushLeft
+      ? clearLeft - Phaser.Math.Between(16, 48)
+      : clearRight + Phaser.Math.Between(16, 48);
+
+    return Phaser.Math.Clamp(safeX, minX, maxX);
+  }
+
   scheduleBossAttackProjectile(attackConfig) {
     const projectileFrame = attackConfig.projectileFrame;
-    const canFire = () => this.bossFightActive && !this.bossDefeated && this.bossState === 'attack';
+    const canFire = () => this.bossFightActive &&
+      !this.bossDefeated &&
+      this.bossState === 'attack' &&
+      !this.bossRainAttackActive;
 
     if (!projectileFrame) {
       this.time.delayedCall(320, () => {
@@ -3097,10 +3312,12 @@ export class LevelScene extends Phaser.Scene {
   }
 
   shouldStartBossChargeAttack() {
+    const bossConfig = this.getBossConfig();
+
     return this.level.id === CHARGE_ATTACK_BOSS_ID &&
       this.anims.exists(this.getBossKey('charge')) &&
       Math.random() <= this.getEasedBossChance(
-        this.getBossSpecialAttackChance(CHARGE_ATTACK_CHANCE),
+        this.getBossSpecialAttackChance(bossConfig.chargeAttackChance ?? CHARGE_ATTACK_CHANCE),
       );
   }
 
@@ -3169,12 +3386,17 @@ export class LevelScene extends Phaser.Scene {
   }
 
   fireBossProjectile(attackConfig = this.getBossConfig()) {
+    if (this.bossRainAttackActive) {
+      return;
+    }
+
     const direction = this.player.x < this.boss.x ? -1 : 1;
     const bossConfig = attackConfig;
     const textureKey = attackConfig.projectileTextureKey ?? this.getBossKey('shot');
+    const cardSpreadChance = bossConfig.cardSpreadAttackChance ?? CARD_SPREAD_ATTACK_CHANCE;
     const useCardSpread = this.shouldUseBossCardSpread() &&
       Math.random() <= this.getEasedBossChance(
-        this.getBossSpecialAttackChance(CARD_SPREAD_ATTACK_CHANCE),
+        this.getBossSpecialAttackChance(cardSpreadChance),
       );
 
     this.playBossShotSfx();
@@ -3281,6 +3503,13 @@ export class LevelScene extends Phaser.Scene {
 
     this.projectiles.children.each((projectile) => {
       if (!projectile.active) {
+        return;
+      }
+
+      if (projectile.getData('cakeRain')) {
+        if (projectile.y >= this.getBossConfig().floorY + 80) {
+          projectile.destroy();
+        }
         return;
       }
 
@@ -3878,8 +4107,11 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getBossSpecialAttackChance(baseChance) {
+    const reductionPerBall = this.getBossConfig().specialAttackReductionPerBall ??
+      BOSS_SPECIAL_ATTACK_REDUCTION_PER_BALL;
+
     return Phaser.Math.Clamp(
-      baseChance - this.levelBallsCollected * BOSS_SPECIAL_ATTACK_REDUCTION_PER_BALL,
+      baseChance - this.levelBallsCollected * reductionPerBall,
       0,
       baseChance,
     );
@@ -4033,6 +4265,7 @@ export class LevelScene extends Phaser.Scene {
       this.bossHp = Math.max(0, this.bossHp - remainingDamage);
     }
 
+    this.updateBossEnrageState();
     this.bossIsHit = true;
     this.playerBossStompConsumed = true;
     this.playBossHittedSfx();
@@ -4139,12 +4372,17 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getBossCritChance() {
-    const ballCritReduction = this.levelBallsCollected * BOSS_CRIT_REDUCTION_PER_BALL;
+    const bossConfig = this.getBossConfig();
+    const baseChance = bossConfig.critChance ??
+      BOSS_CRIT_BASE_CHANCE + (this.level.id - 1) * BOSS_CRIT_CHANCE_PER_LEVEL;
+    const maxChance = bossConfig.maxCritChance ?? BOSS_CRIT_MAX_CHANCE;
+    const ballCritReduction = this.levelBallsCollected *
+      (bossConfig.critReductionPerBall ?? BOSS_CRIT_REDUCTION_PER_BALL);
 
     return Phaser.Math.Clamp(
-      BOSS_CRIT_BASE_CHANCE + (this.level.id - 1) * BOSS_CRIT_CHANCE_PER_LEVEL - ballCritReduction,
+      baseChance - ballCritReduction,
       0,
-      BOSS_CRIT_MAX_CHANCE,
+      maxChance,
     );
   }
 
@@ -4416,14 +4654,19 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getPlayerBossMaxHp() {
+    const baseHp = this.getBossConfig().playerHp ?? BOSS_BASE_HP;
     const roundedBonus = Math.floor(this.levelCoinHpBonus);
     const maxRoundedBonus = Math.floor(this.level.coins.length * COIN_PLAYER_HP_BONUS);
 
     return Phaser.Math.Clamp(
-      BOSS_BASE_HP + roundedBonus,
-      BOSS_BASE_HP,
-      BOSS_BASE_HP + maxRoundedBonus,
+      baseHp + roundedBonus,
+      baseHp,
+      baseHp + maxRoundedBonus,
     );
+  }
+
+  getBossMaxHp() {
+    return this.getBossConfig().hp ?? BOSS_BASE_HP + this.level.coins.length;
   }
 
   loseCoins(amount) {
