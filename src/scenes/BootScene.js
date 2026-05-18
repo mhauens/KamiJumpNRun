@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import introMusicMp3Url from '../../assets/shared/KamisWorldIntro.mp3';
 import introMusicOggUrl from '../../assets/shared/KamisWorldIntro.ogg';
+import levelMusicMp3Url from '../../assets/shared/KamisWorldLevel.mp3';
+import levelMusicOggUrl from '../../assets/shared/KamisWorldLevel.ogg';
+import audioIconMuteUrl from '../../assets/shared/audio_icon_mute.webp';
+import audioIconPauseUrl from '../../assets/shared/audio_icon_pause.webp';
+import audioIconPlayUrl from '../../assets/shared/audio_icon_play.webp';
+import audioIconVolumeUrl from '../../assets/shared/audio_icon_volume.webp';
 import mainCharStandUrl from '../../assets/mainChar/mainChar_stand.webp';
 import mainCharJumpUrl from '../../assets/mainChar/mainChar_jump.webp';
 import mainCharWalkUrl from '../../assets/mainChar/mainChar_walk.webp';
@@ -47,6 +53,7 @@ const PLAYER_HIT_FIT_WIDTH_SOURCE_KEYS = new Set([
 ]);
 const PLAYER_HIT_WIDE_FRAME_SCALE_MULTIPLIER = 1.06;
 const INTRO_MUSIC_KEY = 'kamis-world-intro';
+const LEVEL_MUSIC_KEY = 'kamis-world-level';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -75,7 +82,12 @@ export class BootScene extends Phaser.Scene {
     this.load.image('treasure-box-closed-source', treasureBoxClosedUrl);
     this.load.image('treasure-box-open-source', treasureBoxOpenUrl);
     this.load.image('crit-hit', critHitUrl);
+    this.load.image('audio-icon-mute', audioIconMuteUrl);
+    this.load.image('audio-icon-pause', audioIconPauseUrl);
+    this.load.image('audio-icon-play', audioIconPlayUrl);
+    this.load.image('audio-icon-volume', audioIconVolumeUrl);
     this.load.audio(INTRO_MUSIC_KEY, [introMusicOggUrl, introMusicMp3Url]);
+    this.load.audio(LEVEL_MUSIC_KEY, [levelMusicOggUrl, levelMusicMp3Url]);
     this.loadRetryAudio();
 
     this.createLoadingLabel();
