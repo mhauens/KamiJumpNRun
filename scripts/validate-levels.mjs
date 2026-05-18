@@ -11,6 +11,8 @@ const GROUND_SURFACE_CLEARANCE = 12;
 const MAX_GROUND_PICKUP_HEIGHT = 180;
 const MAX_FLOATING_PICKUP_HEIGHT = 160;
 const MAX_PLATFORM_SIDE_REACH = 160;
+const CHECKPOINT_PLATFORM_SNAP_DISTANCE = 96;
+const MIN_REQUIRED_CHASM_WIDTH = 420;
 
 const failures = [];
 const warnings = [];
@@ -56,6 +58,17 @@ function getContainingGroundBlocks(level, pickup) {
     pickup.x >= platform.x &&
     pickup.x <= platform.x + platform.width
   ));
+}
+
+function getCheckpointPlatforms(level, checkpoint) {
+  return level.platforms.filter((platform) => {
+    const platformRight = platform.x + platform.width;
+    const distance = checkpoint.x < platform.x
+      ? platform.x - checkpoint.x
+      : Math.max(0, checkpoint.x - platformRight);
+
+    return distance <= CHECKPOINT_PLATFORM_SNAP_DISTANCE;
+  });
 }
 
 function validateBounds(level, objectName, point) {
@@ -116,6 +129,16 @@ function validatePickups(level) {
   }
 }
 
+function validateCheckpoints(level) {
+  (level.checkpoints ?? []).forEach((checkpoint, index) => {
+    validateBounds(level, `checkpoint ${index + 1}`, checkpoint);
+
+    if (getCheckpointPlatforms(level, checkpoint).length === 0) {
+      addFailure(level, `checkpoint ${index + 1} has no reachable nearby platform at ${formatPoint(checkpoint)}`);
+    }
+  });
+}
+
 function validateLevel(level, seenIds) {
   if (seenIds.has(level.id)) {
     addFailure(level, `duplicate level id ${level.id}`);
@@ -147,7 +170,59 @@ function validateLevel(level, seenIds) {
     }
   });
 
+  (level.movingPlatforms ?? []).forEach((platform, index) => {
+    ['x', 'y', 'width', 'height'].forEach((key) => {
+      if (!isFiniteNumber(platform[key])) {
+        addFailure(level, `moving platform ${index + 1} has invalid ${key}`);
+      }
+    });
+
+    if (platform.width <= 0 || platform.height <= 0) {
+      addFailure(level, `moving platform ${index + 1} must have positive size`);
+    }
+
+    const distance = platform.distance ?? platform.move?.distance;
+    const speed = platform.speed ?? platform.move?.speed;
+
+    if (!isFiniteNumber(distance) || distance <= 0) {
+      addFailure(level, `moving platform ${index + 1} must have a positive distance`);
+    }
+
+    if (!isFiniteNumber(speed) || speed <= 0) {
+      addFailure(level, `moving platform ${index + 1} must have a positive speed`);
+    }
+
+    const minX = Math.min(platform.x, platform.x + distance);
+    const maxX = Math.max(platform.x, platform.x + distance) + platform.width;
+
+    if (minX < 0 || maxX > level.worldWidth || platform.y < 0 || platform.y + platform.height > level.worldHeight) {
+      addFailure(level, `moving platform ${index + 1} path is outside world bounds`);
+    }
+
+    if (platform.requiredChasm) {
+      if (!isFiniteNumber(platform.chasmLeftX) || !isFiniteNumber(platform.chasmRightX)) {
+        addFailure(level, `moving platform ${index + 1} required chasm is missing bounds`);
+        return;
+      }
+
+      const chasmWidth = platform.chasmRightX - platform.chasmLeftX;
+      if (chasmWidth < MIN_REQUIRED_CHASM_WIDTH) {
+        addFailure(level, `moving platform ${index + 1} required chasm is too short (${chasmWidth}px)`);
+      }
+
+      const blockedByStaticPlatform = level.platforms.some((staticPlatform) => (
+        staticPlatform.x < platform.chasmRightX &&
+        staticPlatform.x + staticPlatform.width > platform.chasmLeftX
+      ));
+
+      if (blockedByStaticPlatform) {
+        addFailure(level, `moving platform ${index + 1} required chasm is bridged by a static platform`);
+      }
+    }
+  });
+
   validatePickups(level);
+  validateCheckpoints(level);
 }
 
 const seenIds = new Set();

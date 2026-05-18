@@ -54,6 +54,7 @@ const PLAYER_BODY_HEIGHT = 980;
 const PLAYER_FOOT_VISUAL_SINK = 30;
 const PLATFORM_SURFACE_HEIGHT = 72;
 const PLATFORM_NUMBER_LABEL_OFFSET = 18;
+const MOVING_PLATFORM_DEFAULT_SPEED = 90;
 const HUD_PANEL_WIDTH = 370;
 const HUD_PANEL_HEIGHT = 146;
 const HUD_TEXT_X = 34;
@@ -352,6 +353,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.createWorld();
     this.createPlatforms();
+    this.createMovingPlatforms();
     this.createPlayer();
     this.createCollectibles();
     this.createCheckpoints();
@@ -1074,6 +1076,46 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
+  createMovingPlatforms() {
+    this.movingPlatforms = this.physics.add.group({
+      allowGravity: false,
+      immovable: true,
+    });
+
+    this.level.movingPlatforms?.forEach((platform, index) => {
+      const block = this.add
+        .tileSprite(
+          platform.x,
+          platform.y,
+          platform.width,
+          platform.height,
+          'platform-surface',
+        )
+        .setOrigin(0, 0)
+        .setDepth(3);
+      const distance = platform.distance ?? platform.move?.distance ?? 260;
+      const speed = platform.speed ?? platform.move?.speed ?? MOVING_PLATFORM_DEFAULT_SPEED;
+      const startX = platform.x;
+      const endX = platform.x + distance;
+      const direction = platform.direction === -1 ? -1 : 1;
+
+      this.physics.add.existing(block);
+      block.body
+        .setAllowGravity(false)
+        .setImmovable(true)
+        .setSize(platform.width, platform.height, false);
+      block.body.pushable = false;
+      block.body.setVelocityX(speed * direction);
+      block.setData('startX', Math.min(startX, endX));
+      block.setData('endX', Math.max(startX, endX));
+      block.setData('speed', speed);
+      block.setData('direction', direction);
+      block.setData('label', `M${index + 1}`);
+
+      this.movingPlatforms.add(block);
+    });
+  }
+
   createPlatformNumberLabel(platform, index) {
     const labelY = platform.height > PLATFORM_SURFACE_HEIGHT
       ? platform.y + PLATFORM_NUMBER_LABEL_OFFSET
@@ -1096,7 +1138,7 @@ export class LevelScene extends Phaser.Scene {
     const surfaceHeight = Math.min(PLATFORM_SURFACE_HEIGHT, platform.height);
     const dirtHeight = Math.max(platform.height - surfaceHeight, 0);
 
-    this.add
+    const surface = this.add
       .tileSprite(
         platform.x,
         platform.y,
@@ -1108,10 +1150,10 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(2);
 
     if (dirtHeight <= 0) {
-      return;
+      return [surface];
     }
 
-    this.add
+    const dirt = this.add
       .tileSprite(
         platform.x,
         platform.y + surfaceHeight,
@@ -1121,6 +1163,8 @@ export class LevelScene extends Phaser.Scene {
       )
       .setOrigin(0, 0)
       .setDepth(1);
+
+    return [surface, dirt];
   }
 
   createPlayer() {
@@ -1847,8 +1891,10 @@ export class LevelScene extends Phaser.Scene {
 
   configureCollisions() {
     this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.player, this.movingPlatforms);
     this.physics.add.collider(this.boss, this.platforms);
     this.physics.add.collider(this.projectiles, this.platforms, this.destroyProjectile, null, this);
+    this.physics.add.collider(this.projectiles, this.movingPlatforms, this.destroyProjectile, null, this);
     this.physics.add.overlap(
       this.player,
       this.collectibles,
@@ -1918,6 +1964,7 @@ export class LevelScene extends Phaser.Scene {
     this.gamepadInput = readGamepadInput(this, this.gamepadButtons);
     this.gamepadButtons = this.gamepadInput.buttons;
     this.updateHudHelpText();
+    this.updateMovingPlatforms();
 
     if (this.levelComplete) {
       this.player.setVelocityX(0);
@@ -2079,6 +2126,26 @@ export class LevelScene extends Phaser.Scene {
     const nextState = isAirborneVisual ? 'jump' : movingOnGround ? 'walk' : 'stand';
 
     this.setPlayerVisualState(nextState);
+  }
+
+  updateMovingPlatforms() {
+    this.movingPlatforms?.children.each((platform) => {
+      const startX = platform.getData('startX');
+      const endX = platform.getData('endX');
+      const speed = platform.getData('speed');
+      const velocityX = platform.body.velocity.x;
+
+      if (velocityX > 0 && platform.x >= endX) {
+        platform.x = endX;
+        platform.body.setVelocityX(-speed);
+      } else if (velocityX < 0 && platform.x <= startX) {
+        platform.x = startX;
+        platform.body.setVelocityX(speed);
+      } else if (velocityX === 0) {
+        const direction = platform.getData('direction') ?? 1;
+        platform.body.setVelocityX(speed * direction);
+      }
+    });
   }
 
   getPlayerSpeed() {

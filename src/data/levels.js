@@ -33,6 +33,37 @@ const BOSS_ARENA_AFTER_PICKUP_PADDING = 180
 const BOSS_ARENA_WIDTH = 1280
 const BOSS_ARENA_EXIT_PADDING = 140
 const BOSS_ARENA_GROUND_HEIGHT = 260
+const CHASM_PLATFORM_EDGE_OVERLAP = 20
+const CHECKPOINT_PLATFORM_INSET = 70
+const CHECKPOINT_PLATFORM_SNAP_DISTANCE = 96
+const CHECKPOINT_TEXTURE_HEIGHT = 56
+
+const MANDATORY_CHASMS = {
+    1: [
+        { edgeX: 1435, rightX: 1585, gapWidth: 460, y: 650, platformWidth: 120, speed: 72 },
+        { edgeX: 4500, rightX: 4610, gapWidth: 500, y: 650, platformWidth: 118, speed: 82 },
+    ],
+    2: [
+        { edgeX: 1460, rightX: 1600, gapWidth: 500, y: 545, platformWidth: 116, speed: 82 },
+        { edgeX: 5070, rightX: 5195, gapWidth: 540, y: 655, platformWidth: 112, speed: 92 },
+    ],
+    3: [
+        { edgeX: 1265, rightX: 1390, gapWidth: 520, y: 660, platformWidth: 108, speed: 88 },
+        { edgeX: 5810, rightX: 5990, gapWidth: 580, y: 560, platformWidth: 106, speed: 100 },
+    ],
+    4: [
+        { edgeX: 670, rightX: 820, gapWidth: 500, y: 590, platformWidth: 108, speed: 88 },
+        { edgeX: 5720, rightX: 5925, gapWidth: 580, y: 555, platformWidth: 104, speed: 102 },
+    ],
+    5: [
+        { edgeX: 575, rightX: 720, gapWidth: 520, y: 585, platformWidth: 104, speed: 96 },
+        { edgeX: 6040, rightX: 6235, gapWidth: 600, y: 610, platformWidth: 100, speed: 108 },
+    ],
+    6: [
+        { edgeX: 595, rightX: 745, gapWidth: 540, y: 570, platformWidth: 100, speed: 100 },
+        { edgeX: 6935, rightX: 7070, gapWidth: 620, y: 585, platformWidth: 96, speed: 116 },
+    ],
+}
 
 function createBossAudioConfig(levelId, overrides = {}) {
     return {
@@ -117,29 +148,29 @@ function withBossDefaults(level) {
 const PRE_BOSS_EXTENSIONS = {
     1: {
         platforms: [
-            { x: 2760, y: 650, width: 280, height: 250 },
-            { x: 3130, y: 590, width: 240, height: 310 },
-            { x: 3460, y: 680, width: 300, height: 220 },
-            { x: 3860, y: 610, width: 280, height: 290 },
-            { x: 3020, y: 470, width: 130, height: 28 },
-            { x: 3330, y: 420, width: 120, height: 28 },
-            { x: 3690, y: 510, width: 130, height: 28 },
-            { x: 4220, y: 670, width: 280, height: 230 },
-            { x: 4560, y: 600, width: 260, height: 300 },
-            { x: 4910, y: 540, width: 240, height: 360 },
-            { x: 5240, y: 660, width: 280, height: 240 },
-            { x: 5630, y: 590, width: 300, height: 310 },
-            { x: 4320, y: 520, width: 120, height: 28 },
-            { x: 4710, y: 450, width: 120, height: 28 },
-            { x: 5090, y: 390, width: 115, height: 28 },
-            { x: 5480, y: 500, width: 130, height: 28 },
+            { x: 2760, y: 650, width: 250, height: 250 },
+            { x: 3160, y: 560, width: 210, height: 340 },
+            { x: 3900, y: 590, width: 240, height: 310 },
+            { x: 3345, y: 390, width: 96, height: 28 },
+            { x: 3715, y: 480, width: 105, height: 28 },
+            { x: 4610, y: 585, width: 220, height: 315 },
+            { x: 4970, y: 510, width: 205, height: 390 },
+            { x: 5690, y: 570, width: 250, height: 330 },
+            { x: 4350, y: 500, width: 100, height: 28 },
+            { x: 4745, y: 425, width: 95, height: 28 },
+            { x: 5130, y: 355, width: 92, height: 28 },
+            { x: 5530, y: 475, width: 105, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 3010, y: 610, width: 130, height: 28, distance: 150, speed: 70 },
+            { x: 4500, y: 650, width: 125, height: 28, distance: 110, speed: 76 },
         ],
         coins: [
             { x: 2860, y: 590 },
             { x: 2940, y: 590 },
             { x: 3075, y: 410 },
             { x: 3335, y: 360 },
-            { x: 3560, y: 620 },
+            { x: 3260, y: 520 },
             { x: 3760, y: 450 },
             { x: 3980, y: 550 },
             { x: 4335, y: 460 },
@@ -147,13 +178,13 @@ const PRE_BOSS_EXTENSIONS = {
             { x: 4740, y: 390 },
             { x: 4990, y: 480 },
             { x: 5205, y: 330 },
-            { x: 5360, y: 600 },
+            { x: 5800, y: 520 },
             { x: 5515, y: 440 },
             { x: 5900, y: 530 },
         ],
         balls: [
-            { x: 3390, y: 365 },
-            { x: 5145, y: 335 },
+            { x: 3395, y: 335 },
+            { x: 5175, y: 300 },
         ],
         checkpoints: [
             { x: 3610, y: 620, label: "Checkpoint 3" },
@@ -162,44 +193,46 @@ const PRE_BOSS_EXTENSIONS = {
     },
     2: {
         platforms: [
-            { x: 3400, y: 650, width: 250, height: 270 },
-            { x: 3740, y: 560, width: 240, height: 360 },
-            { x: 4070, y: 700, width: 260, height: 220 },
-            { x: 4430, y: 600, width: 260, height: 320 },
-            { x: 3600, y: 490, width: 120, height: 24 },
-            { x: 3950, y: 430, width: 120, height: 24 },
-            { x: 4290, y: 560, width: 130, height: 24 },
-            { x: 4800, y: 640, width: 260, height: 280 },
-            { x: 5140, y: 560, width: 240, height: 360 },
-            { x: 5480, y: 690, width: 280, height: 230 },
-            { x: 5860, y: 610, width: 260, height: 310 },
-            { x: 6210, y: 540, width: 260, height: 380 },
-            { x: 4970, y: 500, width: 120, height: 24 },
-            { x: 5320, y: 440, width: 120, height: 24 },
-            { x: 5690, y: 530, width: 130, height: 24 },
-            { x: 6070, y: 450, width: 120, height: 24 },
+            { x: 3400, y: 655, width: 220, height: 265 },
+            { x: 3765, y: 535, width: 210, height: 385 },
+            { x: 4480, y: 580, width: 220, height: 340 },
+            { x: 3620, y: 478, width: 95, height: 24 },
+            { x: 3980, y: 400, width: 95, height: 24 },
+            { x: 4325, y: 535, width: 105, height: 24 },
+            { x: 4850, y: 650, width: 220, height: 270 },
+            { x: 5195, y: 535, width: 205, height: 385 },
+            { x: 5925, y: 590, width: 220, height: 330 },
+            { x: 6285, y: 515, width: 220, height: 405 },
+            { x: 5010, y: 475, width: 95, height: 24 },
+            { x: 5360, y: 405, width: 95, height: 24 },
+            { x: 5735, y: 505, width: 105, height: 24 },
+            { x: 6120, y: 415, width: 95, height: 24 },
+        ],
+        movingPlatforms: [
+            { x: 3620, y: 610, width: 120, height: 28, distance: 145, speed: 82 },
+            { x: 4330, y: 655, width: 120, height: 28, distance: 150, speed: 88 },
         ],
         coins: [
             { x: 3480, y: 590 },
             { x: 3620, y: 430 },
             { x: 3820, y: 500 },
             { x: 3945, y: 370 },
-            { x: 4180, y: 640 },
+            { x: 4385, y: 500 },
             { x: 4345, y: 460 },
             { x: 4560, y: 540 },
             { x: 4890, y: 580 },
             { x: 5010, y: 440 },
             { x: 5230, y: 500 },
             { x: 5320, y: 380 },
-            { x: 5580, y: 630 },
+            { x: 5670, y: 470 },
             { x: 5730, y: 470 },
             { x: 5980, y: 550 },
             { x: 6105, y: 390 },
             { x: 6430, y: 480 },
         ],
         balls: [
-            { x: 4010, y: 375 },
-            { x: 5380, y: 385 },
+            { x: 4025, y: 345 },
+            { x: 5405, y: 350 },
         ],
         checkpoints: [
             { x: 4200, y: 640, label: "Checkpoint 3" },
@@ -208,21 +241,24 @@ const PRE_BOSS_EXTENSIONS = {
     },
     3: {
         platforms: [
-            { x: 4200, y: 620, width: 230, height: 340 },
-            { x: 4520, y: 540, width: 220, height: 420 },
-            { x: 4840, y: 460, width: 230, height: 500 },
-            { x: 5180, y: 610, width: 260, height: 350 },
-            { x: 5540, y: 520, width: 240, height: 440 },
-            { x: 4320, y: 460, width: 120, height: 24 },
-            { x: 4730, y: 410, width: 110, height: 24 },
-            { x: 5080, y: 400, width: 120, height: 24 },
-            { x: 5420, y: 330, width: 110, height: 24 },
-            { x: 5920, y: 590, width: 250, height: 370 },
-            { x: 6260, y: 510, width: 240, height: 450 },
-            { x: 6600, y: 650, width: 280, height: 310 },
-            { x: 6080, y: 440, width: 120, height: 24 },
-            { x: 6440, y: 360, width: 115, height: 24 },
-            { x: 6780, y: 520, width: 120, height: 24 },
+            { x: 4200, y: 625, width: 200, height: 335 },
+            { x: 4560, y: 515, width: 190, height: 445 },
+            { x: 4890, y: 440, width: 195, height: 520 },
+            { x: 5245, y: 635, width: 215, height: 325 },
+            { x: 5605, y: 500, width: 205, height: 460 },
+            { x: 4335, y: 430, width: 92, height: 24 },
+            { x: 4760, y: 380, width: 88, height: 24 },
+            { x: 5120, y: 365, width: 92, height: 24 },
+            { x: 5465, y: 300, width: 88, height: 24 },
+            { x: 5990, y: 600, width: 210, height: 360 },
+            { x: 6335, y: 490, width: 205, height: 470 },
+            { x: 6685, y: 675, width: 230, height: 285 },
+            { x: 6490, y: 330, width: 88, height: 24 },
+            { x: 6835, y: 545, width: 92, height: 24 },
+        ],
+        movingPlatforms: [
+            { x: 4400, y: 570, width: 112, height: 28, distance: 160, speed: 88 },
+            { x: 5810, y: 560, width: 112, height: 28, distance: 180, speed: 94 },
         ],
         coins: [
             { x: 4280, y: 560 },
@@ -235,16 +271,16 @@ const PRE_BOSS_EXTENSIONS = {
             { x: 5420, y: 270 },
             { x: 5620, y: 460 },
             { x: 6010, y: 530 },
-            { x: 6110, y: 380 },
+            { x: 6190, y: 540 },
             { x: 6330, y: 450 },
             { x: 6440, y: 300 },
             { x: 6700, y: 590 },
             { x: 6810, y: 460 },
         ],
         balls: [
-            { x: 4810, y: 295 },
-            { x: 5475, y: 275 },
-            { x: 6500, y: 305 },
+            { x: 4804, y: 325 },
+            { x: 5508, y: 245 },
+            { x: 6534, y: 275 },
         ],
         checkpoints: [
             { x: 4955, y: 400, label: "Checkpoint 3" },
@@ -253,40 +289,42 @@ const PRE_BOSS_EXTENSIONS = {
     },
     4: {
         platforms: [
-            { x: 4400, y: 600, width: 250, height: 380 },
-            { x: 4740, y: 520, width: 230, height: 460 },
-            { x: 5070, y: 690, width: 290, height: 290 },
-            { x: 5450, y: 610, width: 250, height: 370 },
-            { x: 4610, y: 430, width: 120, height: 28 },
-            { x: 4940, y: 360, width: 115, height: 28 },
-            { x: 5310, y: 520, width: 130, height: 28 },
-            { x: 5860, y: 590, width: 250, height: 390 },
-            { x: 6200, y: 500, width: 230, height: 480 },
-            { x: 6530, y: 670, width: 280, height: 310 },
-            { x: 6900, y: 600, width: 260, height: 380 },
-            { x: 6030, y: 450, width: 120, height: 28 },
-            { x: 6370, y: 380, width: 115, height: 28 },
-            { x: 6740, y: 520, width: 130, height: 28 },
+            { x: 4400, y: 605, width: 210, height: 375 },
+            { x: 4770, y: 500, width: 195, height: 480 },
+            { x: 5510, y: 640, width: 210, height: 340 },
+            { x: 4630, y: 480, width: 92, height: 28 },
+            { x: 4970, y: 330, width: 88, height: 28 },
+            { x: 5350, y: 495, width: 100, height: 28 },
+            { x: 5925, y: 600, width: 210, height: 380 },
+            { x: 6275, y: 480, width: 195, height: 500 },
+            { x: 6990, y: 580, width: 215, height: 400 },
+            { x: 6070, y: 420, width: 92, height: 28 },
+            { x: 6420, y: 350, width: 88, height: 28 },
+            { x: 6800, y: 500, width: 100, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 4610, y: 560, width: 108, height: 28, distance: 160, speed: 92 },
+            { x: 5720, y: 555, width: 108, height: 28, distance: 205, speed: 98 },
         ],
         coins: [
             { x: 4480, y: 540 },
-            { x: 4640, y: 370 },
+            { x: 4640, y: 450 },
             { x: 4820, y: 460 },
             { x: 4940, y: 300 },
-            { x: 5170, y: 630 },
+            { x: 5075, y: 470 },
             { x: 5350, y: 460 },
             { x: 5580, y: 550 },
             { x: 5960, y: 530 },
             { x: 6060, y: 390 },
             { x: 6270, y: 440 },
             { x: 6370, y: 320 },
-            { x: 6650, y: 610 },
+            { x: 6500, y: 450 },
             { x: 6785, y: 460 },
             { x: 7100, y: 540 },
         ],
         balls: [
-            { x: 4995, y: 305 },
-            { x: 6425, y: 325 },
+            { x: 5014, y: 275 },
+            { x: 6464, y: 295 },
         ],
         checkpoints: [
             { x: 5210, y: 630, label: "Checkpoint 3" },
@@ -295,25 +333,28 @@ const PRE_BOSS_EXTENSIONS = {
     },
     5: {
         platforms: [
-            { x: 4720, y: 540, width: 220, height: 500 },
-            { x: 5050, y: 660, width: 280, height: 380 },
-            { x: 5420, y: 570, width: 230, height: 470 },
-            { x: 5750, y: 620, width: 260, height: 420 },
-            { x: 4900, y: 420, width: 110, height: 28 },
-            { x: 5240, y: 500, width: 120, height: 28 },
-            { x: 5600, y: 410, width: 110, height: 28 },
-            { x: 6160, y: 560, width: 230, height: 480 },
-            { x: 6500, y: 650, width: 280, height: 390 },
-            { x: 6870, y: 570, width: 260, height: 470 },
-            { x: 7230, y: 620, width: 260, height: 420 },
-            { x: 6330, y: 440, width: 110, height: 28 },
-            { x: 6680, y: 500, width: 120, height: 28 },
-            { x: 7040, y: 410, width: 110, height: 28 },
+            { x: 4720, y: 525, width: 185, height: 515 },
+            { x: 5480, y: 545, width: 195, height: 495 },
+            { x: 5825, y: 640, width: 215, height: 400 },
+            { x: 4925, y: 390, width: 84, height: 28 },
+            { x: 5285, y: 475, width: 92, height: 28 },
+            { x: 5650, y: 380, width: 84, height: 28 },
+            { x: 6235, y: 540, width: 195, height: 500 },
+            { x: 6585, y: 680, width: 230, height: 360 },
+            { x: 6960, y: 545, width: 215, height: 495 },
+            { x: 7335, y: 645, width: 215, height: 395 },
+            { x: 6380, y: 410, width: 84, height: 28 },
+            { x: 6735, y: 475, width: 92, height: 28 },
+            { x: 7100, y: 380, width: 84, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 4905, y: 610, width: 104, height: 28, distance: 180, speed: 96 },
+            { x: 6815, y: 610, width: 104, height: 28, distance: 145, speed: 104 },
         ],
         coins: [
             { x: 4800, y: 480 },
             { x: 4930, y: 360 },
-            { x: 5160, y: 600 },
+            { x: 4860, y: 475 },
             { x: 5290, y: 440 },
             { x: 5480, y: 510 },
             { x: 5600, y: 350 },
@@ -327,8 +368,8 @@ const PRE_BOSS_EXTENSIONS = {
             { x: 7420, y: 560 },
         ],
         balls: [
-            { x: 5650, y: 355 },
-            { x: 7095, y: 355 },
+            { x: 5692, y: 325 },
+            { x: 7142, y: 325 },
         ],
         checkpoints: [
             { x: 5535, y: 510, label: "Checkpoint 3" },
@@ -337,21 +378,25 @@ const PRE_BOSS_EXTENSIONS = {
     },
     6: {
         platforms: [
-            { x: 5280, y: 550, width: 220, height: 510 },
-            { x: 5600, y: 650, width: 270, height: 410 },
-            { x: 5960, y: 500, width: 220, height: 560 },
-            { x: 6280, y: 590, width: 250, height: 470 },
-            { x: 6620, y: 620, width: 250, height: 440 },
-            { x: 5460, y: 430, width: 110, height: 28 },
-            { x: 5810, y: 360, width: 110, height: 28 },
-            { x: 6130, y: 405, width: 110, height: 28 },
-            { x: 6480, y: 470, width: 120, height: 28 },
-            { x: 6980, y: 540, width: 230, height: 520 },
-            { x: 7310, y: 640, width: 270, height: 420 },
-            { x: 7670, y: 520, width: 230, height: 540 },
-            { x: 7150, y: 420, width: 110, height: 28 },
-            { x: 7490, y: 500, width: 120, height: 28 },
-            { x: 7820, y: 390, width: 110, height: 28 },
+            { x: 5280, y: 535, width: 185, height: 525 },
+            { x: 5635, y: 675, width: 225, height: 385 },
+            { x: 6025, y: 480, width: 185, height: 580 },
+            { x: 6365, y: 610, width: 210, height: 450 },
+            { x: 6725, y: 635, width: 210, height: 425 },
+            { x: 5490, y: 400, width: 84, height: 28 },
+            { x: 5855, y: 330, width: 84, height: 28 },
+            { x: 6185, y: 375, width: 84, height: 28 },
+            { x: 6545, y: 445, width: 92, height: 28 },
+            { x: 7070, y: 520, width: 195, height: 540 },
+            { x: 7425, y: 665, width: 225, height: 395 },
+            { x: 7805, y: 500, width: 195, height: 560 },
+            { x: 7210, y: 390, width: 84, height: 28 },
+            { x: 7560, y: 475, width: 92, height: 28 },
+            { x: 7895, y: 360, width: 84, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 5860, y: 590, width: 100, height: 28, distance: 165, speed: 104 },
+            { x: 6935, y: 585, width: 100, height: 28, distance: 135, speed: 112 },
         ],
         coins: [
             { x: 5360, y: 490 },
@@ -371,9 +416,9 @@ const PRE_BOSS_EXTENSIONS = {
             { x: 7820, y: 330 },
         ],
         balls: [
-            { x: 5860, y: 305 },
-            { x: 6530, y: 415 },
-            { x: 7875, y: 335 },
+            { x: 5897, y: 275 },
+            { x: 6591, y: 390 },
+            { x: 7937, y: 305 },
         ],
         checkpoints: [
             { x: 6070, y: 440, label: "Checkpoint 4" },
@@ -392,10 +437,283 @@ function withPreBossExtension(level) {
     return {
         ...level,
         platforms: [...level.platforms, ...extension.platforms],
+        movingPlatforms: [
+            ...(level.movingPlatforms ?? []),
+            ...(extension.movingPlatforms ?? []),
+        ],
         coins: [...level.coins, ...extension.coins],
         balls: [...level.balls, ...extension.balls],
         checkpoints: [...level.checkpoints, ...extension.checkpoints],
     }
+}
+
+function shiftPointAfter(point, thresholdX, deltaX) {
+    if (point.x < thresholdX) {
+        return point
+    }
+
+    return {
+        ...point,
+        x: point.x + deltaX,
+    }
+}
+
+function shiftPlatformAfter(platform, thresholdX, deltaX) {
+    if (platform.x < thresholdX) {
+        return platform
+    }
+
+    return {
+        ...platform,
+        x: platform.x + deltaX,
+    }
+}
+
+function trimPlatformAroundChasm(platform, leftX, rightX) {
+    const platformRight = platform.x + platform.width
+
+    if (platform.x >= rightX || platformRight <= leftX) {
+        return platform
+    }
+
+    if (platform.x < leftX && platformRight > rightX) {
+        return {
+            ...platform,
+            width: leftX - platform.x,
+        }
+    }
+
+    if (platform.x < leftX) {
+        return {
+            ...platform,
+            width: leftX - platform.x,
+        }
+    }
+
+    if (platformRight > rightX) {
+        return {
+            ...platform,
+            x: rightX,
+            width: platformRight - rightX,
+        }
+    }
+
+    return null
+}
+
+function hasNearbySupport(point, platforms) {
+    return platforms.some((platform) => (
+        point.x >= platform.x - 160 &&
+        point.x <= platform.x + platform.width + 160 &&
+        point.y < platform.y &&
+        point.y >= platform.y - (platform.height >= 120 ? 180 : 160)
+    ))
+}
+
+function movePickupsOutOfChasm(points, platforms, leftX, rightX, type) {
+    let movedCount = 0
+    const landingCandidates = platforms
+        .filter((platform) => platform.x >= rightX - CHASM_PLATFORM_EDGE_OVERLAP)
+        .sort((left, right) => left.x - right.x)[0]
+    const landingPlatform = platforms
+        .filter((platform) => (
+            platform.height >= 120 &&
+            platform.x >= rightX - CHASM_PLATFORM_EDGE_OVERLAP
+        ))
+        .sort((left, right) => left.x - right.x)[0] ?? landingCandidates
+
+    if (!landingPlatform) {
+        return points
+    }
+
+    return points.map((point) => {
+        const insideChasm =
+            (
+                point.x > leftX + CHASM_PLATFORM_EDGE_OVERLAP &&
+                point.x < rightX - CHASM_PLATFORM_EDGE_OVERLAP
+            ) ||
+            (
+                point.x > leftX - 80 &&
+                point.x < rightX &&
+                !hasNearbySupport(point, platforms)
+            )
+
+        if (!insideChasm) {
+            return point
+        }
+
+        const spacing = type === 'coin' ? 62 : 88
+        const baseInset = type === 'coin' ? 100 : landingPlatform.width - 60
+        const inset = Math.min(
+            landingPlatform.width - 44,
+            baseInset + movedCount * spacing,
+        )
+        const yOffset = type === 'coin' ? 60 : 58
+        movedCount += 1
+
+        return {
+            ...point,
+            x: landingPlatform.x + Math.max(36, inset),
+            y: landingPlatform.y - yOffset,
+        }
+    })
+}
+
+function moveCheckpointsOutOfChasm(checkpoints, platforms, leftX, rightX) {
+    let movedCount = 0
+    const landingPlatform = platforms
+        .filter((platform) => (
+            platform.height >= 120 &&
+            platform.x >= rightX - CHASM_PLATFORM_EDGE_OVERLAP
+        ))
+        .sort((left, right) => left.x - right.x)[0]
+
+    if (!landingPlatform) {
+        return checkpoints
+    }
+
+    return checkpoints.map((checkpoint) => {
+        const checkpointTop = checkpoint.y + CHECKPOINT_TEXTURE_HEIGHT
+        const insideChasm =
+            checkpoint.x > leftX + CHASM_PLATFORM_EDGE_OVERLAP &&
+            checkpoint.x < rightX - CHASM_PLATFORM_EDGE_OVERLAP &&
+            !hasNearbySupport({ x: checkpoint.x, y: checkpointTop - 1 }, platforms)
+
+        if (!insideChasm) {
+            return checkpoint
+        }
+
+        const x = Math.min(
+            landingPlatform.x + landingPlatform.width - CHECKPOINT_PLATFORM_INSET,
+            landingPlatform.x + CHECKPOINT_PLATFORM_INSET + movedCount * 120,
+        )
+        movedCount += 1
+
+        return {
+            ...checkpoint,
+            x,
+            y: landingPlatform.y - CHECKPOINT_TEXTURE_HEIGHT,
+        }
+    })
+}
+
+function getCheckpointPlatformDistance(checkpoint, platform) {
+    const platformRight = platform.x + platform.width
+
+    return checkpoint.x < platform.x
+        ? platform.x - checkpoint.x
+        : Math.max(0, checkpoint.x - platformRight)
+}
+
+function snapCheckpointsToPlatforms(checkpoints, platforms) {
+    return checkpoints.map((checkpoint) => {
+        const nearestPlatform = platforms
+            .map((platform) => ({
+                platform,
+                distance: getCheckpointPlatformDistance(checkpoint, platform),
+            }))
+            .sort((left, right) => {
+                const distanceDiff = left.distance - right.distance
+                if (distanceDiff !== 0) {
+                    return distanceDiff
+                }
+
+                return right.platform.width - left.platform.width
+            })[0]
+
+        if (!nearestPlatform || nearestPlatform.distance <= CHECKPOINT_PLATFORM_SNAP_DISTANCE) {
+            return checkpoint
+        }
+
+        const { platform } = nearestPlatform
+        const minX = platform.x + CHECKPOINT_PLATFORM_INSET
+        const maxX = platform.x + platform.width - CHECKPOINT_PLATFORM_INSET
+        const x = minX <= maxX
+            ? Math.min(maxX, Math.max(minX, checkpoint.x))
+            : platform.x + platform.width / 2
+
+        return {
+            ...checkpoint,
+            x,
+            y: platform.y - CHECKPOINT_TEXTURE_HEIGHT,
+        }
+    })
+}
+
+function createChasmPlatform(chasm, offsetX, index) {
+    const startX = chasm.edgeX + offsetX + CHASM_PLATFORM_EDGE_OVERLAP
+    const rightLandingX = chasm.rightX + offsetX + chasm.gapWidth
+    const endX = rightLandingX - chasm.platformWidth + CHASM_PLATFORM_EDGE_OVERLAP
+
+    return {
+        x: startX,
+        y: chasm.y,
+        width: chasm.platformWidth,
+        height: 28,
+        distance: endX - startX,
+        speed: chasm.speed,
+        requiredChasm: true,
+        chasmLeftX: chasm.edgeX + offsetX,
+        chasmRightX: rightLandingX,
+        label: `Chasm ${index + 1}`,
+    }
+}
+
+function withMandatoryChasms(level) {
+    const chasms = MANDATORY_CHASMS[level.id]
+
+    if (!chasms) {
+        return level
+    }
+
+    let offsetX = 0
+    let nextLevel = {
+        ...level,
+        movingPlatforms: [],
+    }
+
+    chasms.forEach((chasm, index) => {
+        const thresholdX = chasm.edgeX + offsetX
+        const chasmLeftX = chasm.edgeX + offsetX
+        const chasmRightX = chasm.rightX + offsetX + chasm.gapWidth
+        const platforms = nextLevel.platforms
+            .map((platform) => shiftPlatformAfter(platform, thresholdX, chasm.gapWidth))
+            .map((platform) => trimPlatformAroundChasm(platform, chasmLeftX, chasmRightX))
+            .filter((platform) => platform && platform.width > 0)
+        const coins = nextLevel.coins.map((coin) => (
+            shiftPointAfter(coin, thresholdX, chasm.gapWidth)
+        ))
+        const balls = nextLevel.balls.map((ball) => (
+            shiftPointAfter(ball, thresholdX, chasm.gapWidth)
+        ))
+        const checkpoints = nextLevel.checkpoints.map((checkpoint) => (
+            shiftPointAfter(checkpoint, thresholdX, chasm.gapWidth)
+        ))
+
+        nextLevel = {
+            ...nextLevel,
+            worldWidth: nextLevel.worldWidth + chasm.gapWidth,
+            goal: shiftPointAfter(nextLevel.goal, thresholdX, chasm.gapWidth),
+            platforms,
+            coins: movePickupsOutOfChasm(coins, platforms, chasmLeftX, chasmRightX, 'coin'),
+            balls: movePickupsOutOfChasm(balls, platforms, chasmLeftX, chasmRightX, 'ball'),
+            checkpoints: snapCheckpointsToPlatforms(
+                moveCheckpointsOutOfChasm(checkpoints, platforms, chasmLeftX, chasmRightX),
+                platforms,
+            ),
+            trees: nextLevel.trees?.map((tree) => (
+                shiftPointAfter(tree, thresholdX, chasm.gapWidth)
+            )),
+            movingPlatforms: [
+                ...nextLevel.movingPlatforms,
+                createChasmPlatform(chasm, offsetX, index),
+            ],
+        }
+
+        offsetX += chasm.gapWidth
+    })
+
+    return nextLevel
 }
 
 export const LEVELS = [
@@ -408,19 +726,20 @@ export const LEVELS = [
         spawn: { x: 120, y: 650 },
         platforms: [
             { x: 0, y: 680, width: 420, height: 220 },
-            { x: 520, y: 680, width: 380, height: 220 },
-            { x: 980, y: 620, width: 520, height: 280 },
-            { x: 1600, y: 690, width: 380, height: 210 },
-            { x: 2060, y: 620, width: 260, height: 280 },
-            { x: 2380, y: 560, width: 300, height: 340 },
-            { x: 300, y: 540, width: 180, height: 28 },
-            { x: 740, y: 510, width: 170, height: 28 },
-            { x: 1220, y: 470, width: 180, height: 28 },
-            { x: 1810, y: 550, width: 170, height: 28 },
-            { x: 2140, y: 455, width: 150, height: 28 },
-            { x: 600, y: 380, width: 105, height: 24 },
-            { x: 1445, y: 380, width: 105, height: 24 },
-            { x: 2305, y: 295, width: 105, height: 24 },
+            { x: 1005, y: 600, width: 430, height: 300 },
+            { x: 2045, y: 590, width: 220, height: 310 },
+            { x: 2375, y: 525, width: 245, height: 375 },
+            { x: 300, y: 515, width: 145, height: 28 },
+            { x: 750, y: 480, width: 135, height: 28 },
+            { x: 1235, y: 440, width: 140, height: 28 },
+            { x: 1815, y: 570, width: 130, height: 28 },
+            { x: 2155, y: 420, width: 115, height: 28 },
+            { x: 610, y: 350, width: 90, height: 24 },
+            { x: 1455, y: 350, width: 90, height: 24 },
+            { x: 2320, y: 265, width: 90, height: 24 },
+        ],
+        movingPlatforms: [
+            { x: 1435, y: 650, width: 120, height: 28, distance: 150, speed: 66 },
         ],
         coins: [
             { x: 390, y: 610 },
@@ -432,16 +751,16 @@ export const LEVELS = [
             { x: 1280, y: 410 },
             { x: 1370, y: 410 },
             { x: 1540, y: 620 },
-            { x: 1710, y: 620 },
+            { x: 1835, y: 525 },
             { x: 1890, y: 490 },
             { x: 2200, y: 370 },
-            { x: 2470, y: 500 },
-            { x: 2550, y: 500 },
+            { x: 2470, y: 485 },
+            { x: 2550, y: 485 },
         ],
         balls: [
-            { x: 652, y: 325 },
-            { x: 1498, y: 325 },
-            { x: 2358, y: 215 },
+            { x: 655, y: 295 },
+            { x: 1500, y: 295 },
+            { x: 2365, y: 210 },
         ],
         checkpoints: [
             { x: 1090, y: 560, label: "Checkpoint 1" },
@@ -470,24 +789,25 @@ export const LEVELS = [
         spawn: { x: 120, y: 650 },
         platforms: [
             { x: 0, y: 680, width: 360, height: 240 },
-            { x: 450, y: 620, width: 260, height: 300 },
-            { x: 790, y: 710, width: 260, height: 210 },
-            { x: 1120, y: 620, width: 340, height: 300 },
-            { x: 1550, y: 500, width: 240, height: 420 },
-            { x: 1870, y: 650, width: 260, height: 270 },
-            { x: 2210, y: 560, width: 280, height: 360 },
-            { x: 2580, y: 700, width: 260, height: 220 },
-            { x: 2920, y: 600, width: 380, height: 320 },
-            { x: 250, y: 525, width: 120, height: 24 },
-            { x: 620, y: 470, width: 120, height: 24 },
-            { x: 930, y: 545, width: 120, height: 24 },
-            { x: 1260, y: 440, width: 130, height: 24 },
-            { x: 1710, y: 400, width: 140, height: 24 },
-            { x: 2340, y: 490, width: 130, height: 24 },
-            { x: 2720, y: 640, width: 120, height: 24 },
-            { x: 140, y: 395, width: 100, height: 24 },
-            { x: 1450, y: 300, width: 105, height: 24 },
-            { x: 2495, y: 410, width: 100, height: 24 },
+            { x: 470, y: 610, width: 230, height: 310 },
+            { x: 1180, y: 590, width: 290, height: 330 },
+            { x: 1600, y: 470, width: 210, height: 450 },
+            { x: 1935, y: 675, width: 220, height: 245 },
+            { x: 2265, y: 540, width: 230, height: 380 },
+            { x: 3000, y: 580, width: 300, height: 340 },
+            { x: 260, y: 500, width: 95, height: 24 },
+            { x: 640, y: 440, width: 95, height: 24 },
+            { x: 960, y: 520, width: 95, height: 24 },
+            { x: 1295, y: 405, width: 105, height: 24 },
+            { x: 1740, y: 365, width: 110, height: 24 },
+            { x: 2380, y: 455, width: 105, height: 24 },
+            { x: 2760, y: 615, width: 95, height: 24 },
+            { x: 150, y: 365, width: 85, height: 24 },
+            { x: 1465, y: 275, width: 85, height: 24 },
+            { x: 2520, y: 380, width: 85, height: 24 },
+        ],
+        movingPlatforms: [
+            { x: 1470, y: 540, width: 115, height: 28, distance: 130, speed: 76 },
         ],
         coins: [
             { x: 260, y: 610 },
@@ -495,7 +815,7 @@ export const LEVELS = [
             { x: 290, y: 465 },
             { x: 520, y: 560 },
             { x: 680, y: 410 },
-            { x: 850, y: 650 },
+            { x: 920, y: 485 },
             { x: 990, y: 485 },
             { x: 1320, y: 380 },
             { x: 1420, y: 560 },
@@ -509,9 +829,9 @@ export const LEVELS = [
             { x: 3180, y: 540 },
         ],
         balls: [
-            { x: 190, y: 340 },
-            { x: 1502, y: 245 },
-            { x: 2545, y: 355 },
+            { x: 192, y: 315 },
+            { x: 1508, y: 220 },
+            { x: 2562, y: 325 },
         ],
         checkpoints: [
             { x: 1160, y: 560, label: "Checkpoint 1" },
@@ -555,33 +875,33 @@ export const LEVELS = [
         spawn: { x: 120, y: 650 },
         platforms: [
             { x: 0, y: 680, width: 300, height: 280 },
-            { x: 390, y: 610, width: 230, height: 350 },
-            { x: 700, y: 530, width: 220, height: 430 },
-            { x: 1000, y: 700, width: 260, height: 260 },
-            { x: 1340, y: 610, width: 230, height: 350 },
-            { x: 1650, y: 530, width: 240, height: 430 },
-            { x: 1980, y: 460, width: 220, height: 500 },
-            { x: 2290, y: 650, width: 240, height: 310 },
-            { x: 2600, y: 570, width: 230, height: 390 },
-            { x: 2920, y: 500, width: 220, height: 460 },
-            { x: 3230, y: 420, width: 220, height: 540 },
-            { x: 3550, y: 600, width: 220, height: 360 },
-            { x: 3850, y: 520, width: 210, height: 440 },
-            { x: 260, y: 520, width: 120, height: 24 },
-            { x: 560, y: 440, width: 120, height: 24 },
-            { x: 870, y: 360, width: 110, height: 24 },
-            { x: 1180, y: 610, width: 120, height: 24 },
-            { x: 1490, y: 440, width: 120, height: 24 },
-            { x: 1820, y: 375, width: 120, height: 24 },
-            { x: 2140, y: 280, width: 120, height: 24 },
-            { x: 2450, y: 590, width: 110, height: 24 },
-            { x: 2770, y: 500, width: 120, height: 24 },
-            { x: 3090, y: 420, width: 110, height: 24 },
-            { x: 3430, y: 340, width: 100, height: 24 },
-            { x: 700, y: 370, width: 100, height: 24 },
-            { x: 1940, y: 245, width: 100, height: 24 },
-            { x: 2670, y: 405, width: 100, height: 24 },
-            { x: 3670, y: 430, width: 100, height: 24 },
+            { x: 410, y: 590, width: 200, height: 370 },
+            { x: 1390, y: 585, width: 200, height: 375 },
+            { x: 1705, y: 505, width: 205, height: 455 },
+            { x: 2045, y: 435, width: 190, height: 525 },
+            { x: 2370, y: 670, width: 205, height: 290 },
+            { x: 2695, y: 545, width: 195, height: 415 },
+            { x: 3025, y: 475, width: 190, height: 485 },
+            { x: 3355, y: 395, width: 190, height: 565 },
+            { x: 3685, y: 620, width: 190, height: 340 },
+            { x: 3975, y: 500, width: 185, height: 460 },
+            { x: 580, y: 415, width: 92, height: 24 },
+            { x: 895, y: 330, width: 84, height: 24 },
+            { x: 1045, y: 585, width: 220, height: 24 },
+            { x: 1520, y: 415, width: 92, height: 24 },
+            { x: 1850, y: 345, width: 92, height: 24 },
+            { x: 2175, y: 250, width: 92, height: 24 },
+            { x: 2500, y: 565, width: 84, height: 24 },
+            { x: 2820, y: 470, width: 92, height: 24 },
+            { x: 3145, y: 390, width: 84, height: 24 },
+            { x: 725, y: 340, width: 78, height: 24 },
+            { x: 1975, y: 215, width: 78, height: 24 },
+            { x: 2700, y: 375, width: 78, height: 24 },
+            { x: 3715, y: 400, width: 78, height: 24 },
+        ],
+        movingPlatforms: [
+            { x: 1265, y: 660, width: 105, height: 28, distance: 125, speed: 84 },
+            { x: 3215, y: 535, width: 98, height: 28, distance: 140, speed: 92 },
         ],
         coins: [
             { x: 240, y: 610 },
@@ -589,7 +909,7 @@ export const LEVELS = [
             { x: 310, y: 460 },
             { x: 610, y: 380 },
             { x: 910, y: 300 },
-            { x: 1080, y: 650 },
+            { x: 1080, y: 470 },
             { x: 1210, y: 550 },
             { x: 1520, y: 380 },
             { x: 1690, y: 470 },
@@ -606,14 +926,19 @@ export const LEVELS = [
             { x: 3920, y: 460 },
         ],
         balls: [
-            { x: 750, y: 315 },
-            { x: 1990, y: 190 },
-            { x: 2720, y: 350 },
-            { x: 3720, y: 375 },
+            { x: 764, y: 285 },
+            { x: 2014, y: 160 },
+            { x: 2739, y: 330 },
+            { x: 3754, y: 345 },
         ],
         checkpoints: [
             { x: 1390, y: 550, label: "Checkpoint 1" },
             { x: 2950, y: 440, label: "Checkpoint 2" },
+        ],
+        trees: [
+            { x: 1490, y: 585 },
+            { x: 2475, y: 670 },
+            { x: 3780, y: 620 },
         ],
         goal: { x: 4000, y: 430, width: 56, height: 90 },
         boss: {
@@ -656,42 +981,44 @@ export const LEVELS = [
         spawn: { x: 120, y: 650 },
         platforms: [
             { x: 0, y: 680, width: 320, height: 300 },
-            { x: 430, y: 620, width: 250, height: 360 },
-            { x: 780, y: 560, width: 230, height: 420 },
-            { x: 1100, y: 690, width: 300, height: 290 },
-            { x: 1500, y: 610, width: 260, height: 370 },
-            { x: 1860, y: 530, width: 250, height: 450 },
-            { x: 2230, y: 660, width: 300, height: 320 },
-            { x: 2620, y: 590, width: 250, height: 390 },
-            { x: 2960, y: 510, width: 250, height: 470 },
-            { x: 3310, y: 640, width: 290, height: 340 },
-            { x: 3710, y: 560, width: 250, height: 420 },
-            { x: 4050, y: 650, width: 260, height: 330 },
-            { x: 290, y: 520, width: 120, height: 28 },
-            { x: 640, y: 455, width: 130, height: 28 },
-            { x: 980, y: 500, width: 130, height: 28 },
-            { x: 1370, y: 430, width: 140, height: 28 },
-            { x: 1740, y: 370, width: 130, height: 28 },
-            { x: 2100, y: 470, width: 130, height: 28 },
-            { x: 2490, y: 515, width: 130, height: 28 },
-            { x: 2860, y: 430, width: 130, height: 28 },
-            { x: 3220, y: 390, width: 120, height: 28 },
-            { x: 3600, y: 500, width: 130, height: 28 },
-            { x: 3920, y: 450, width: 120, height: 28 },
-            { x: 780, y: 300, width: 105, height: 28 },
-            { x: 1610, y: 300, width: 105, height: 28 },
-            { x: 2370, y: 360, width: 105, height: 28 },
-            { x: 3080, y: 240, width: 105, height: 28 },
-            { x: 3810, y: 380, width: 105, height: 28 },
+            { x: 455, y: 600, width: 215, height: 380 },
+            { x: 820, y: 535, width: 195, height: 445 },
+            { x: 1545, y: 590, width: 220, height: 390 },
+            { x: 1915, y: 505, width: 215, height: 475 },
+            { x: 2295, y: 680, width: 250, height: 300 },
+            { x: 2695, y: 570, width: 215, height: 410 },
+            { x: 3045, y: 485, width: 215, height: 495 },
+            { x: 3405, y: 665, width: 240, height: 315 },
+            { x: 3795, y: 535, width: 215, height: 445 },
+            { x: 4145, y: 670, width: 220, height: 310 },
+            { x: 1015, y: 475, width: 100, height: 28 },
+            { x: 1410, y: 400, width: 105, height: 28 },
+            { x: 1780, y: 340, width: 100, height: 28 },
+            { x: 2150, y: 445, width: 100, height: 28 },
+            { x: 2545, y: 490, width: 100, height: 28 },
+            { x: 2925, y: 400, width: 100, height: 28 },
+            { x: 3290, y: 360, width: 92, height: 28 },
+            { x: 3675, y: 475, width: 100, height: 28 },
+            { x: 4005, y: 470, width: 92, height: 28 },
+            { x: 815, y: 350, width: 82, height: 28 },
+            { x: 1645, y: 270, width: 82, height: 28 },
+            { x: 2410, y: 330, width: 82, height: 28 },
+            { x: 3120, y: 210, width: 82, height: 28 },
+            { x: 3850, y: 350, width: 82, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 670, y: 590, width: 110, height: 28, distance: 150, speed: 86 },
+            { x: 2545, y: 625, width: 104, height: 28, distance: 150, speed: 94 },
         ],
         coins: [
             { x: 240, y: 610 },
             { x: 300, y: 610 },
-            { x: 340, y: 460 },
-            { x: 690, y: 395 },
+            { x: 555, y: 540 },
+            { x: 980, y: 500 },
+            { x: 1085, y: 440 },
             { x: 840, y: 500 },
             { x: 1030, y: 440 },
-            { x: 1210, y: 630 },
+            { x: 1485, y: 370 },
             { x: 1430, y: 370 },
             { x: 1790, y: 310 },
             { x: 1940, y: 470 },
@@ -703,18 +1030,17 @@ export const LEVELS = [
             { x: 3270, y: 330 },
             { x: 3080, y: 360 },
             { x: 3500, y: 580 },
-            { x: 540, y: 395 },
             { x: 3650, y: 440 },
             { x: 3760, y: 500 },
             { x: 3960, y: 390 },
             { x: 4160, y: 590 },
         ],
         balls: [
-            { x: 833, y: 245 },
-            { x: 1663, y: 245 },
-            { x: 2423, y: 305 },
-            { x: 3133, y: 185 },
-            { x: 3863, y: 325 },
+            { x: 856, y: 295 },
+            { x: 1686, y: 215 },
+            { x: 2451, y: 275 },
+            { x: 3161, y: 155 },
+            { x: 3891, y: 295 },
         ],
         checkpoints: [
             { x: 1540, y: 550, label: "Checkpoint 1" },
@@ -761,36 +1087,38 @@ export const LEVELS = [
         spawn: { x: 120, y: 650 },
         platforms: [
             { x: 0, y: 700, width: 280, height: 340 },
-            { x: 370, y: 630, width: 220, height: 410 },
-            { x: 680, y: 540, width: 210, height: 500 },
-            { x: 980, y: 450, width: 200, height: 590 },
-            { x: 1280, y: 620, width: 270, height: 420 },
-            { x: 1650, y: 520, width: 220, height: 520 },
-            { x: 1970, y: 430, width: 210, height: 610 },
-            { x: 2280, y: 610, width: 260, height: 430 },
-            { x: 2640, y: 540, width: 220, height: 500 },
-            { x: 2960, y: 460, width: 210, height: 580 },
-            { x: 3280, y: 650, width: 280, height: 390 },
-            { x: 3660, y: 560, width: 230, height: 480 },
-            { x: 4000, y: 480, width: 220, height: 560 },
-            { x: 4340, y: 620, width: 260, height: 420 },
-            { x: 250, y: 560, width: 100, height: 28 },
-            { x: 570, y: 480, width: 110, height: 28 },
-            { x: 870, y: 390, width: 110, height: 28 },
-            { x: 1190, y: 340, width: 110, height: 28 },
-            { x: 1520, y: 560, width: 110, height: 28 },
-            { x: 1840, y: 450, width: 120, height: 28 },
-            { x: 2170, y: 360, width: 110, height: 28 },
-            { x: 2500, y: 540, width: 110, height: 28 },
-            { x: 2830, y: 430, width: 120, height: 28 },
-            { x: 3160, y: 350, width: 110, height: 28 },
-            { x: 3540, y: 590, width: 110, height: 28 },
-            { x: 3880, y: 510, width: 110, height: 28 },
-            { x: 4210, y: 410, width: 110, height: 28 },
-            { x: 1010, y: 305, width: 100, height: 28 },
-            { x: 1690, y: 390, width: 105, height: 28 },
-            { x: 3060, y: 275, width: 105, height: 28 },
-            { x: 4100, y: 330, width: 105, height: 28 },
+            { x: 390, y: 610, width: 185, height: 430 },
+            { x: 720, y: 515, width: 180, height: 525 },
+            { x: 1035, y: 420, width: 170, height: 620 },
+            { x: 1345, y: 645, width: 225, height: 395 },
+            { x: 1725, y: 495, width: 185, height: 545 },
+            { x: 2065, y: 400, width: 180, height: 640 },
+            { x: 2390, y: 635, width: 215, height: 405 },
+            { x: 2760, y: 515, width: 185, height: 525 },
+            { x: 3095, y: 430, width: 180, height: 610 },
+            { x: 3435, y: 675, width: 230, height: 365 },
+            { x: 3825, y: 535, width: 195, height: 505 },
+            { x: 4180, y: 455, width: 185, height: 585 },
+            { x: 4515, y: 640, width: 220, height: 400 },
+            { x: 260, y: 530, width: 78, height: 28 },
+            { x: 595, y: 450, width: 84, height: 28 },
+            { x: 910, y: 360, width: 84, height: 28 },
+            { x: 1235, y: 310, width: 84, height: 28 },
+            { x: 1575, y: 535, width: 84, height: 28 },
+            { x: 1900, y: 420, width: 92, height: 28 },
+            { x: 2240, y: 330, width: 84, height: 28 },
+            { x: 2575, y: 515, width: 84, height: 28 },
+            { x: 2915, y: 400, width: 92, height: 28 },
+            { x: 3250, y: 320, width: 84, height: 28 },
+            { x: 4330, y: 380, width: 84, height: 28 },
+            { x: 1050, y: 275, width: 76, height: 28 },
+            { x: 1735, y: 360, width: 80, height: 28 },
+            { x: 3110, y: 185, width: 80, height: 28 },
+            { x: 4160, y: 255, width: 80, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 575, y: 585, width: 100, height: 28, distance: 145, speed: 92 },
+            { x: 2245, y: 590, width: 96, height: 28, distance: 145, speed: 104 },
         ],
         coins: [
             { x: 260, y: 640 },
@@ -819,10 +1147,10 @@ export const LEVELS = [
             { x: 4450, y: 560 },
         ],
         balls: [
-            { x: 1060, y: 250 },
-            { x: 1743, y: 335 },
-            { x: 3113, y: 220 },
-            { x: 4153, y: 275 },
+            { x: 1088, y: 220 },
+            { x: 1775, y: 305 },
+            { x: 3150, y: 130 },
+            { x: 4200, y: 200 },
         ],
         checkpoints: [
             { x: 1700, y: 460, label: "Checkpoint 1" },
@@ -857,41 +1185,42 @@ export const LEVELS = [
         spawn: { x: 120, y: 650 },
         platforms: [
             { x: 0, y: 700, width: 300, height: 360 },
-            { x: 390, y: 620, width: 220, height: 440 },
-            { x: 700, y: 540, width: 210, height: 520 },
-            { x: 1010, y: 660, width: 250, height: 400 },
-            { x: 1350, y: 570, width: 220, height: 490 },
-            { x: 1670, y: 530, width: 210, height: 530 },
-            { x: 1990, y: 620, width: 240, height: 440 },
-            { x: 2320, y: 530, width: 220, height: 530 },
-            { x: 2640, y: 440, width: 210, height: 620 },
-            { x: 2960, y: 640, width: 260, height: 420 },
-            { x: 3330, y: 560, width: 220, height: 500 },
-            { x: 3650, y: 470, width: 210, height: 590 },
-            { x: 3970, y: 610, width: 250, height: 450 },
-            { x: 4320, y: 520, width: 220, height: 540 },
-            { x: 4640, y: 430, width: 210, height: 630 },
-            { x: 4950, y: 620, width: 220, height: 440 },
-            { x: 270, y: 535, width: 100, height: 28 },
-            { x: 590, y: 460, width: 100, height: 28 },
-            { x: 900, y: 380, width: 100, height: 28 },
-            { x: 1230, y: 470, width: 100, height: 28 },
-            { x: 1550, y: 410, width: 100, height: 28 },
-            { x: 1870, y: 340, width: 110, height: 28 },
-            { x: 2200, y: 530, width: 100, height: 28 },
-            { x: 2530, y: 360, width: 110, height: 28 },
-            { x: 2850, y: 290, width: 100, height: 28 },
-            { x: 3200, y: 570, width: 110, height: 28 },
-            { x: 3520, y: 400, width: 100, height: 28 },
-            { x: 3850, y: 320, width: 110, height: 28 },
-            { x: 4200, y: 540, width: 100, height: 28 },
-            { x: 4520, y: 380, width: 110, height: 28 },
-            { x: 4840, y: 300, width: 100, height: 28 },
-            { x: 770, y: 325, width: 100, height: 28 },
-            { x: 1440, y: 355, width: 100, height: 28 },
-            { x: 2700, y: 285, width: 100, height: 28 },
-            { x: 3710, y: 275, width: 100, height: 28 },
-            { x: 4755, y: 240, width: 100, height: 28 },
+            { x: 410, y: 600, width: 185, height: 460 },
+            { x: 745, y: 515, width: 180, height: 545 },
+            { x: 1435, y: 545, width: 185, height: 515 },
+            { x: 1775, y: 505, width: 180, height: 555 },
+            { x: 2110, y: 650, width: 200, height: 410 },
+            { x: 2460, y: 500, width: 185, height: 560 },
+            { x: 2795, y: 410, width: 180, height: 650 },
+            { x: 3130, y: 665, width: 220, height: 395 },
+            { x: 3505, y: 535, width: 185, height: 525 },
+            { x: 3845, y: 440, width: 180, height: 620 },
+            { x: 4180, y: 635, width: 210, height: 425 },
+            { x: 4545, y: 495, width: 185, height: 565 },
+            { x: 4885, y: 400, width: 180, height: 660 },
+            { x: 5205, y: 635, width: 190, height: 425 },
+            { x: 1015, y: 350, width: 76, height: 28 },
+            { x: 1280, y: 445, width: 76, height: 28 },
+            { x: 1605, y: 380, width: 76, height: 28 },
+            { x: 1935, y: 310, width: 84, height: 28 },
+            { x: 2275, y: 500, width: 76, height: 28 },
+            { x: 2610, y: 330, width: 84, height: 28 },
+            { x: 2935, y: 260, width: 76, height: 28 },
+            { x: 3295, y: 540, width: 84, height: 28 },
+            { x: 3625, y: 370, width: 76, height: 28 },
+            { x: 3960, y: 290, width: 84, height: 28 },
+            { x: 4315, y: 515, width: 76, height: 28 },
+            { x: 4645, y: 350, width: 84, height: 28 },
+            { x: 4975, y: 270, width: 76, height: 28 },
+            { x: 800, y: 295, width: 76, height: 28 },
+            { x: 1485, y: 325, width: 76, height: 28 },
+            { x: 2740, y: 255, width: 76, height: 28 },
+            { x: 3820, y: 245, width: 76, height: 28 },
+            { x: 4895, y: 210, width: 76, height: 28 },
+        ],
+        movingPlatforms: [
+            { x: 595, y: 570, width: 96, height: 28, distance: 150, speed: 96 },
+            { x: 2975, y: 610, width: 96, height: 28, distance: 155, speed: 112 },
         ],
         coins: [
             { x: 240, y: 640 },
@@ -899,7 +1228,7 @@ export const LEVELS = [
             { x: 310, y: 475 },
             { x: 640, y: 400 },
             { x: 950, y: 320 },
-            { x: 1120, y: 600 },
+            { x: 940, y: 470 },
             { x: 1280, y: 410 },
             { x: 1580, y: 350 },
             { x: 1910, y: 280 },
@@ -911,24 +1240,24 @@ export const LEVELS = [
             { x: 2560, y: 300 },
             { x: 2880, y: 230 },
             { x: 3060, y: 580 },
-            { x: 3360, y: 340 },
+            { x: 3360, y: 390 },
             { x: 3240, y: 510 },
             { x: 3560, y: 340 },
             { x: 3890, y: 260 },
             { x: 4070, y: 550 },
-            { x: 4380, y: 320 },
+            { x: 4380, y: 365 },
             { x: 4240, y: 480 },
             { x: 4560, y: 320 },
             { x: 4710, y: 300 },
             { x: 4880, y: 240 },
-            { x: 5040, y: 560 },
+            { x: 5220, y: 575 },
         ],
         balls: [
-            { x: 820, y: 270 },
-            { x: 1490, y: 300 },
-            { x: 2750, y: 230 },
-            { x: 3760, y: 220 },
-            { x: 4805, y: 185 },
+            { x: 838, y: 240 },
+            { x: 1523, y: 270 },
+            { x: 2778, y: 200 },
+            { x: 3858, y: 190 },
+            { x: 4933, y: 155 },
         ],
         checkpoints: [
             { x: 1680, y: 470, label: "Checkpoint 1" },
@@ -981,4 +1310,4 @@ export const LEVELS = [
             },
         },
     },
-].map(withPreBossExtension).map(withBossDefaults)
+].map(withPreBossExtension).map(withMandatoryChasms).map(withBossDefaults)
