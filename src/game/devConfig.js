@@ -2,6 +2,7 @@ import { getLevels } from '../data/levelStore.js';
 
 const START_LEVEL_ENV_KEY = 'VITE_START_LEVEL';
 const SHOW_PLATFORM_NUMBERS_ENV_KEY = 'VITE_SHOW_PLATFORM_NUMBERS';
+const START_AT_BOSS_ENV_KEY = 'VITE_START_AT_BOSS';
 const START_BOSS_DEFEATED_ENV_KEY = 'VITE_START_BOSS_DEFEATED';
 
 function readDevBooleanEnv(key) {
@@ -42,6 +43,10 @@ export function resolveStartLevelIndex() {
 
 export function shouldShowPlatformNumbers() {
   return readDevBooleanEnv(SHOW_PLATFORM_NUMBERS_ENV_KEY);
+}
+
+export function shouldStartAtBoss() {
+  return readDevBooleanEnv(START_AT_BOSS_ENV_KEY);
 }
 
 export function shouldStartBossDefeated() {

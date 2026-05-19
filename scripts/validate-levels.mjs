@@ -12,7 +12,14 @@ const MAX_GROUND_PICKUP_HEIGHT = 180;
 const MAX_FLOATING_PICKUP_HEIGHT = 160;
 const MAX_PLATFORM_SIDE_REACH = 160;
 const CHECKPOINT_PLATFORM_SNAP_DISTANCE = 96;
+const CHECKPOINT_TEXTURE_HEIGHT = 56;
 const MIN_REQUIRED_CHASM_WIDTH = 420;
+const PLAYER_SPEED = 320;
+const JUMP_VELOCITY = 660;
+const GRAVITY_Y = 1200;
+const JUMP_HORIZONTAL_BUFFER = 28;
+const PLATFORM_EDGE_MARGIN = 8;
+const PLATFORM_REACH_Y_TOLERANCE = 8;
 
 const failures = [];
 const warnings = [];
@@ -42,7 +49,10 @@ function isGroundBlock(platform) {
 }
 
 function getSupportingPlatforms(level, pickup) {
-  return level.platforms.filter((platform) => (
+  return [
+    ...level.platforms,
+    ...(level.fallingPlatforms ?? []),
+  ].filter((platform) => (
     pickup.x >= platform.x - MAX_PLATFORM_SIDE_REACH &&
     pickup.x <= platform.x + platform.width + MAX_PLATFORM_SIDE_REACH &&
     pickup.y < platform.y &&
@@ -68,6 +78,127 @@ function getCheckpointPlatforms(level, checkpoint) {
       : Math.max(0, checkpoint.x - platformRight);
 
     return distance <= CHECKPOINT_PLATFORM_SNAP_DISTANCE;
+  });
+}
+
+function getFallingCheckpointPlatforms(level, checkpoint) {
+  return (level.fallingPlatforms ?? []).filter((platform) => {
+    const platformRight = platform.x + platform.width;
+    const distance = checkpoint.x < platform.x
+      ? platform.x - checkpoint.x
+      : Math.max(0, checkpoint.x - platformRight);
+    const preferredTop = checkpoint.y + CHECKPOINT_TEXTURE_HEIGHT;
+
+    return distance <= CHECKPOINT_PLATFORM_SNAP_DISTANCE &&
+      Math.abs(platform.y - preferredTop) <= CHECKPOINT_PLATFORM_SNAP_DISTANCE;
+  });
+}
+
+function getTraversalPlatforms(level) {
+  return [
+    ...level.platforms.map((platform, index) => ({
+      ...platform,
+      id: `P${index + 1}`,
+      minX: platform.x,
+      maxX: platform.x + platform.width,
+      topY: platform.y,
+    })),
+    ...(level.fallingPlatforms ?? []).map((platform, index) => ({
+      ...platform,
+      id: `F${index + 1}`,
+      minX: platform.x,
+      maxX: platform.x + platform.width,
+      topY: platform.y,
+    })),
+    ...(level.movingPlatforms ?? []).map((platform, index) => {
+      const distance = platform.distance ?? platform.move?.distance ?? 0;
+      const pathStartX = Math.min(platform.x, platform.x + distance);
+      const pathEndX = Math.max(platform.x, platform.x + distance) + platform.width;
+
+      return {
+        ...platform,
+        id: `M${index + 1}`,
+        minX: pathStartX,
+        maxX: pathEndX,
+        topY: platform.y,
+      };
+    }),
+  ];
+}
+
+function getJumpLandingTime(sourceTopY, targetTopY) {
+  const dy = targetTopY - sourceTopY;
+  const discriminant = JUMP_VELOCITY ** 2 + 2 * GRAVITY_Y * dy;
+
+  if (discriminant < -PLATFORM_REACH_Y_TOLERANCE) {
+    return null;
+  }
+
+  return (JUMP_VELOCITY + Math.sqrt(Math.max(0, discriminant))) / GRAVITY_Y;
+}
+
+function getHorizontalGap(source, target) {
+  if (target.minX >= source.maxX) {
+    return Math.max(0, target.minX - source.maxX - PLATFORM_EDGE_MARGIN);
+  }
+
+  if (source.minX >= target.maxX) {
+    return Math.max(0, source.minX - target.maxX - PLATFORM_EDGE_MARGIN);
+  }
+
+  return 0;
+}
+
+function canReachPlatform(source, target) {
+  if (source === target) {
+    return false;
+  }
+
+  const landingTime = getJumpLandingTime(source.topY, target.topY);
+  if (landingTime === null) {
+    return false;
+  }
+
+  const horizontalGap = getHorizontalGap(source, target);
+  const maxHorizontalReach = PLAYER_SPEED * landingTime + JUMP_HORIZONTAL_BUFFER;
+
+  return horizontalGap <= maxHorizontalReach;
+}
+
+function getSpawnPlatforms(level, platforms) {
+  return platforms.filter((platform) => (
+    level.spawn.x >= platform.minX - MAX_PLATFORM_SIDE_REACH &&
+    level.spawn.x <= platform.maxX + MAX_PLATFORM_SIDE_REACH &&
+    level.spawn.y <= platform.topY &&
+    level.spawn.y >= platform.topY - MAX_GROUND_PICKUP_HEIGHT
+  ));
+}
+
+function validatePlatformReachability(level) {
+  const platforms = getTraversalPlatforms(level);
+  const reachable = new Set(getSpawnPlatforms(level, platforms).map((platform) => platform.id));
+  const queue = platforms.filter((platform) => reachable.has(platform.id));
+
+  while (queue.length > 0) {
+    const source = queue.shift();
+
+    platforms.forEach((target) => {
+      if (reachable.has(target.id) || !canReachPlatform(source, target)) {
+        return;
+      }
+
+      reachable.add(target.id);
+      queue.push(target);
+    });
+  }
+
+  platforms.forEach((platform) => {
+    if (!reachable.has(platform.id)) {
+      addFailure(
+        level,
+        `${platform.id} cannot be reached with a valid jump path at (${platform.x}, ${platform.y})`,
+      );
+    }
   });
 }
 
@@ -134,7 +265,11 @@ function validateCheckpoints(level) {
     validateBounds(level, `checkpoint ${index + 1}`, checkpoint);
 
     if (getCheckpointPlatforms(level, checkpoint).length === 0) {
-      addFailure(level, `checkpoint ${index + 1} has no reachable nearby platform at ${formatPoint(checkpoint)}`);
+      addFailure(level, `checkpoint ${index + 1} has no stable nearby platform at ${formatPoint(checkpoint)}`);
+    }
+
+    if (getFallingCheckpointPlatforms(level, checkpoint).length > 0) {
+      addFailure(level, `checkpoint ${index + 1} is placed on or too close to a falling platform at ${formatPoint(checkpoint)}`);
     }
   });
 }
@@ -167,6 +302,27 @@ function validateLevel(level, seenIds) {
 
     if (platform.width <= 0 || platform.height <= 0) {
       addFailure(level, `platform ${index + 1} must have positive size`);
+    }
+  });
+
+  (level.fallingPlatforms ?? []).forEach((platform, index) => {
+    ['x', 'y', 'width', 'height'].forEach((key) => {
+      if (!isFiniteNumber(platform[key])) {
+        addFailure(level, `falling platform ${index + 1} has invalid ${key}`);
+      }
+    });
+
+    if (platform.width <= 0 || platform.height <= 0) {
+      addFailure(level, `falling platform ${index + 1} must have positive size`);
+    }
+
+    if (
+      platform.x < 0 ||
+      platform.x + platform.width > level.worldWidth ||
+      platform.y < 0 ||
+      platform.y + platform.height > level.worldHeight
+    ) {
+      addFailure(level, `falling platform ${index + 1} is outside world bounds`);
     }
   });
 
@@ -223,6 +379,7 @@ function validateLevel(level, seenIds) {
 
   validatePickups(level);
   validateCheckpoints(level);
+  validatePlatformReachability(level);
 }
 
 const seenIds = new Set();

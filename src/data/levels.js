@@ -33,10 +33,143 @@ const BOSS_ARENA_AFTER_PICKUP_PADDING = 180
 const BOSS_ARENA_WIDTH = 1280
 const BOSS_ARENA_EXIT_PADDING = 140
 const BOSS_ARENA_GROUND_HEIGHT = 260
+const BOSS_HP_PLAYTIME_MULTIPLIER = 1.9
 const CHASM_PLATFORM_EDGE_OVERLAP = 20
 const CHECKPOINT_PLATFORM_INSET = 70
 const CHECKPOINT_PLATFORM_SNAP_DISTANCE = 96
 const CHECKPOINT_TEXTURE_HEIGHT = 56
+const MARATHON_STRETCH_START_GAP = 520
+const MARATHON_STRETCH_SEGMENT_COUNT = 18
+const MARATHON_STRETCH_SEGMENT_STEP = 780
+
+const MARATHON_STRETCH_VARIANTS = [
+    {
+        groundOffsets: [-20, -90, 25, -145, -55, 10],
+        highOffsets: [-150, -155, -145, -160, -150, -155],
+        highXOffsets: [390, 390, 390, 390, 390, 390],
+        groundWidths: [220, 260, 220],
+        narrowWidths: [88, 96, 84, 104, 92, 100],
+        movingEvery: 4,
+        movingRemainder: 1,
+        movingXOffset: 520,
+        movingYOffset: -115,
+        movingDistanceBase: 150,
+        ballEvery: 5,
+        ballRemainder: 2,
+        checkpointEvery: 4,
+        checkpointRemainder: 0,
+        finalGroundOffset: -40,
+        entryBridge: [
+            { xOffset: -360, yOffset: -70, width: 108 },
+            { xOffset: -190, yOffset: -50, width: 108 },
+        ],
+    },
+    {
+        groundOffsets: [-120, -35, -165, 20, -75, -10],
+        highOffsets: [-120, -160, -135, -165, -125, -155],
+        highXOffsets: [360, 405, 375, 430, 365, 395],
+        groundWidths: [250, 210, 290, 220],
+        narrowWidths: [112, 86, 118, 92, 104, 90],
+        movingEvery: 3,
+        movingRemainder: 2,
+        movingXOffset: 500,
+        movingYOffset: -135,
+        movingDistanceBase: 115,
+        ballEvery: 6,
+        ballRemainder: 4,
+        checkpointEvery: 5,
+        checkpointRemainder: 0,
+        finalGroundOffset: -95,
+        entryBridge: [
+            { xOffset: -360, yOffset: -70, width: 108 },
+            { xOffset: -190, yOffset: -50, width: 108 },
+        ],
+    },
+    {
+        groundOffsets: [15, -140, -45, -160, 10, -105],
+        highOffsets: [-165, -130, -165, -140, -160, -125],
+        highXOffsets: [415, 365, 425, 370, 405, 360],
+        groundWidths: [205, 235, 275, 215],
+        narrowWidths: [82, 126, 88, 118, 94, 110],
+        movingEvery: 4,
+        movingRemainder: 0,
+        movingXOffset: 545,
+        movingYOffset: -95,
+        movingDistanceBase: 170,
+        ballEvery: 5,
+        ballRemainder: 1,
+        checkpointEvery: 4,
+        checkpointRemainder: 2,
+        finalGroundOffset: 5,
+        entryBridge: [
+            { xOffset: -360, yOffset: -70, width: 108 },
+            { xOffset: -190, yOffset: -50, width: 108 },
+        ],
+    },
+    {
+        groundOffsets: [-55, -165, -15, -110, -145, 35],
+        highOffsets: [-140, -150, -165, -130, -160, -145],
+        highXOffsets: [370, 440, 390, 360, 420, 380],
+        groundWidths: [280, 225, 245, 210],
+        narrowWidths: [100, 96, 132, 84, 108, 90],
+        movingEvery: 5,
+        movingRemainder: 3,
+        movingXOffset: 515,
+        movingYOffset: -145,
+        movingDistanceBase: 135,
+        ballEvery: 4,
+        ballRemainder: 3,
+        checkpointEvery: 3,
+        checkpointRemainder: 0,
+        finalGroundOffset: -120,
+        entryBridge: [
+            { xOffset: -360, yOffset: -70, width: 108 },
+            { xOffset: -190, yOffset: -50, width: 108 },
+        ],
+    },
+    {
+        groundOffsets: [-150, -70, 0, -130, -30, -175],
+        highOffsets: [-115, -160, -150, -165, -125, -165],
+        highXOffsets: [350, 400, 455, 375, 435, 390],
+        groundWidths: [240, 300, 215, 255],
+        narrowWidths: [128, 92, 86, 122, 100, 112],
+        movingEvery: 3,
+        movingRemainder: 1,
+        movingXOffset: 560,
+        movingYOffset: -120,
+        movingDistanceBase: 95,
+        ballEvery: 6,
+        ballRemainder: 0,
+        checkpointEvery: 4,
+        checkpointRemainder: 1,
+        finalGroundOffset: -60,
+        entryBridge: [
+            { xOffset: -360, yOffset: -70, width: 108 },
+            { xOffset: -190, yOffset: -50, width: 108 },
+        ],
+    },
+    {
+        groundOffsets: [-90, -20, -155, -65, -185, -70],
+        highOffsets: [-165, -125, -160, -165, -135, -165],
+        highXOffsets: [430, 360, 405, 445, 370, 415],
+        groundWidths: [215, 275, 230, 295],
+        narrowWidths: [90, 116, 104, 88, 130, 96],
+        movingEvery: 4,
+        movingRemainder: 2,
+        movingXOffset: 500,
+        movingYOffset: -145,
+        movingDistanceBase: 150,
+        ballEvery: 5,
+        ballRemainder: 4,
+        checkpointEvery: 5,
+        checkpointRemainder: 2,
+        finalGroundOffset: -145,
+        entryBridge: [
+            { xOffset: -360, yOffset: -70, width: 108 },
+            { xOffset: -190, yOffset: -50, width: 108 },
+        ],
+    },
+]
 
 const MANDATORY_CHASMS = {
     1: [
@@ -82,6 +215,25 @@ function createBossAudioConfig(levelId, overrides = {}) {
     }
 }
 
+function scaleBossHpForPlaytime(boss) {
+    const scaleHp = (hp) => (
+        Number.isFinite(hp)
+            ? Math.round(hp * BOSS_HP_PLAYTIME_MULTIPLIER)
+            : hp
+    )
+
+    return {
+        ...boss,
+        hp: scaleHp(boss.hp),
+        phase2: boss.phase2
+            ? {
+                ...boss.phase2,
+                hp: scaleHp(boss.phase2.hp),
+            }
+            : boss.phase2,
+    }
+}
+
 function withBossDefaults(level) {
     const lastPickupX = Math.max(
         ...level.coins.map((entry) => entry.x),
@@ -115,7 +267,7 @@ function withBossDefaults(level) {
 
         return !overlapsArena
     })
-    const boss = {
+    const boss = scaleBossHpForPlaytime({
         ...BOSS_DEFAULTS,
         ...(level.boss ?? {}),
         audio: createBossAudioConfig(level.id, level.boss?.audio),
@@ -134,7 +286,7 @@ function withBossDefaults(level) {
             y: originalGoalBottom - level.goal.height,
             label: "Boss Checkpoint",
         },
-    }
+    })
 
     return {
         ...level,
@@ -379,7 +531,7 @@ const PRE_BOSS_EXTENSIONS = {
     6: {
         platforms: [
             { x: 5280, y: 535, width: 185, height: 525 },
-            { x: 5635, y: 675, width: 225, height: 385 },
+            { x: 5635, y: 620, width: 225, height: 440 },
             { x: 6025, y: 480, width: 185, height: 580 },
             { x: 6365, y: 610, width: 210, height: 450 },
             { x: 6725, y: 635, width: 210, height: 425 },
@@ -440,6 +592,10 @@ function withPreBossExtension(level) {
         movingPlatforms: [
             ...(level.movingPlatforms ?? []),
             ...(extension.movingPlatforms ?? []),
+        ],
+        fallingPlatforms: [
+            ...(level.fallingPlatforms ?? []),
+            ...(extension.fallingPlatforms ?? []),
         ],
         coins: [...level.coins, ...extension.coins],
         balls: [...level.balls, ...extension.balls],
@@ -686,6 +842,9 @@ function withMandatoryChasms(level) {
         const balls = nextLevel.balls.map((ball) => (
             shiftPointAfter(ball, thresholdX, chasm.gapWidth)
         ))
+        const fallingPlatforms = (nextLevel.fallingPlatforms ?? []).map((platform) => (
+            shiftPlatformAfter(platform, thresholdX, chasm.gapWidth)
+        ))
         const checkpoints = nextLevel.checkpoints.map((checkpoint) => (
             shiftPointAfter(checkpoint, thresholdX, chasm.gapWidth)
         ))
@@ -695,6 +854,7 @@ function withMandatoryChasms(level) {
             worldWidth: nextLevel.worldWidth + chasm.gapWidth,
             goal: shiftPointAfter(nextLevel.goal, thresholdX, chasm.gapWidth),
             platforms,
+            fallingPlatforms,
             coins: movePickupsOutOfChasm(coins, platforms, chasmLeftX, chasmRightX, 'coin'),
             balls: movePickupsOutOfChasm(balls, platforms, chasmLeftX, chasmRightX, 'ball'),
             checkpoints: snapCheckpointsToPlatforms(
@@ -714,6 +874,175 @@ function withMandatoryChasms(level) {
     })
 
     return nextLevel
+}
+
+function getContentEndX(level) {
+    const platformEndX = level.platforms.map((platform) => platform.x + platform.width)
+    const movingPlatformEndX = (level.movingPlatforms ?? []).map((platform) => (
+        platform.x + platform.width + (platform.distance ?? platform.move?.distance ?? 0)
+    ))
+    const pointEndX = [
+        ...level.coins,
+        ...level.balls,
+        ...level.checkpoints,
+        ...(level.trees ?? []),
+    ].map((point) => point.x)
+
+    return Math.max(
+        level.goal.x + level.goal.width,
+        ...platformEndX,
+        ...movingPlatformEndX,
+        ...pointEndX,
+    )
+}
+
+function createMarathonStretch(level) {
+    const variant = MARATHON_STRETCH_VARIANTS[(level.id - 1) % MARATHON_STRETCH_VARIANTS.length]
+    const baseX = Math.ceil(getContentEndX(level) + MARATHON_STRETCH_START_GAP)
+    const groundY = Math.max(...level.platforms
+        .filter((platform) => platform.height >= 180)
+        .map((platform) => platform.y))
+
+    const platforms = []
+    const movingPlatforms = []
+    const fallingPlatforms = []
+    const coins = []
+    const balls = []
+    const checkpoints = []
+    const trees = []
+
+    Array.from({ length: MARATHON_STRETCH_SEGMENT_COUNT }, (_, index) => {
+        const x = baseX + index * MARATHON_STRETCH_SEGMENT_STEP
+        const groundTop = Math.min(
+            level.worldHeight - 220,
+            Math.max(groundY - 190, groundY + variant.groundOffsets[index % variant.groundOffsets.length]),
+        )
+        const groundWidth = variant.groundWidths[index % variant.groundWidths.length]
+        const highY = Math.max(180, groundTop + variant.highOffsets[index % variant.highOffsets.length])
+        const highX = x + variant.highXOffsets[index % variant.highXOffsets.length]
+        const narrowWidth = variant.narrowWidths[index % variant.narrowWidths.length]
+
+        platforms.push({
+            x,
+            y: groundTop,
+            width: groundWidth,
+            height: Math.max(level.worldHeight - groundTop, 220),
+        })
+        fallingPlatforms.push({
+            x: highX,
+            y: highY,
+            width: narrowWidth,
+            height: 28,
+        })
+
+        if ((index + level.id) % 3 === 0) {
+            coins.push(
+                { x: x + Math.round(groundWidth * 0.3), y: groundTop - 60 },
+                { x: x + Math.round(groundWidth * 0.65), y: groundTop - 60 },
+            )
+        } else if ((index + level.id) % 3 === 1) {
+            coins.push({ x: highX + Math.round(narrowWidth * 0.45), y: highY - 44 })
+        } else {
+            coins.push(
+                { x: x + Math.round(groundWidth * 0.45), y: groundTop - 58 },
+                { x: highX + Math.round(narrowWidth * 0.45), y: highY - 44 },
+            )
+        }
+
+        if (index % variant.movingEvery === variant.movingRemainder) {
+            movingPlatforms.push({
+                x: x + variant.movingXOffset,
+                y: Math.max(220, groundTop + variant.movingYOffset),
+                width: 96 + ((index + level.id) % 3) * 12,
+                height: 28,
+                distance: variant.movingDistanceBase + index * 3,
+                speed: 82 + level.id * 4,
+            })
+        }
+
+        if (index % variant.ballEvery === variant.ballRemainder) {
+            balls.push({ x: highX + Math.round(narrowWidth * 0.5), y: highY - 95 })
+        }
+
+        if (index > 0 && index % variant.checkpointEvery === variant.checkpointRemainder) {
+            checkpoints.push({
+                x: x + Math.min(90, Math.round(groundWidth * 0.35)),
+                y: groundTop - CHECKPOINT_TEXTURE_HEIGHT,
+                label: `Checkpoint ${Math.floor(index / 4) + 5}`,
+            })
+        }
+
+        if (level.trees && index % 6 === (level.id + 2) % 6) {
+            trees.push({ x: x + Math.round(groundWidth * 0.5), y: groundTop })
+        }
+    })
+
+    const finalX = baseX + MARATHON_STRETCH_SEGMENT_COUNT * MARATHON_STRETCH_SEGMENT_STEP
+    const finalGroundTop = Math.min(
+        level.worldHeight - 220,
+        Math.max(groundY - 190, groundY + variant.finalGroundOffset),
+    )
+
+    variant.entryBridge.forEach((bridge) => {
+        fallingPlatforms.push({
+            x: baseX + bridge.xOffset,
+            y: Math.max(220, groundY + bridge.yOffset),
+            width: bridge.width,
+            height: 28,
+        })
+    })
+
+    platforms.push({
+        x: finalX - 390,
+        y: finalGroundTop,
+        width: 320,
+        height: Math.max(level.worldHeight - finalGroundTop, 220),
+    })
+
+    return {
+        platforms,
+        movingPlatforms,
+        fallingPlatforms,
+        coins: [
+            ...coins,
+            { x: finalX - 250, y: finalGroundTop - 60 },
+            { x: finalX - 150, y: finalGroundTop - 60 },
+        ],
+        balls: [
+            ...balls,
+            { x: finalX - 120, y: Math.max(180, finalGroundTop - 150) },
+        ],
+        checkpoints,
+        trees,
+        worldWidth: finalX + 520,
+    }
+}
+
+function withMarathonStretch(level) {
+    const stretch = createMarathonStretch(level)
+
+    return {
+        ...level,
+        worldWidth: Math.max(level.worldWidth, stretch.worldWidth),
+        platforms: [...level.platforms, ...stretch.platforms],
+        movingPlatforms: [
+            ...(level.movingPlatforms ?? []),
+            ...stretch.movingPlatforms,
+        ],
+        fallingPlatforms: [
+            ...(level.fallingPlatforms ?? []),
+            ...stretch.fallingPlatforms,
+        ],
+        coins: [...level.coins, ...stretch.coins],
+        balls: [...level.balls, ...stretch.balls],
+        checkpoints: [...level.checkpoints, ...stretch.checkpoints],
+        trees: level.trees || stretch.trees.length
+            ? [
+                ...(level.trees ?? []),
+                ...stretch.trees,
+            ]
+            : level.trees,
+    }
 }
 
 export const LEVELS = [
@@ -774,6 +1103,8 @@ export const LEVELS = [
             speed: 112,
             attackCooldown: 1350,
             projectileSpeed: 285,
+            paintPuddleSpawnChance: 0.3,
+            specialAttackReductionPerBall: 0,
             dodgeChance: 0.28,
             critChance: 0.16,
             shotOffsetY: -76,
@@ -998,7 +1329,7 @@ export const LEVELS = [
             { x: 2545, y: 490, width: 100, height: 28 },
             { x: 2925, y: 400, width: 100, height: 28 },
             { x: 3290, y: 360, width: 92, height: 28 },
-            { x: 3675, y: 475, width: 100, height: 28 },
+            { x: 3675, y: 500, width: 100, height: 28 },
             { x: 4005, y: 470, width: 92, height: 28 },
             { x: 815, y: 350, width: 82, height: 28 },
             { x: 1645, y: 270, width: 82, height: 28 },
@@ -1274,6 +1605,13 @@ export const LEVELS = [
             projectileSpeed: 345,
             dodgeChance: 0.52,
             critChance: 0.23,
+            cakeRainAttackChance: 0.36,
+            cakeRainCooldown: 1500,
+            cakeRainProjectileCount: 8,
+            cakeRainFallSpeed: 440,
+            cakeRainShotScale: 0.5,
+            cakeRainShotBodyWidth: 42,
+            cakeRainShotBodyHeight: 28,
             scaleMultiplier: 1.1,
             shotOffsetY: -89,
             shotScale: 0.5,
@@ -1310,4 +1648,4 @@ export const LEVELS = [
             },
         },
     },
-].map(withPreBossExtension).map(withMandatoryChasms).map(withBossDefaults)
+].map(withPreBossExtension).map(withMandatoryChasms).map(withMarathonStretch).map(withBossDefaults)
