@@ -144,7 +144,7 @@ const PLAYER_CRIT_CHANCE = 0.15;
 const BOSS_CRIT_BASE_CHANCE = 0.16;
 const BOSS_CRIT_CHANCE_PER_LEVEL = 0.015;
 const BOSS_CRIT_MAX_CHANCE = 0.28;
-const BOSS_CRIT_REDUCTION_PER_BALL = 0.02;
+const BOSS_HP_REDUCTION_PER_BALL = 1.5;
 const CRIT_DAMAGE_MIN = 3;
 const CRIT_DAMAGE_MAX = 8;
 const CRIT_HIT_DISPLAY_WIDTH = 320;
@@ -4929,11 +4929,9 @@ export class LevelScene extends Phaser.Scene {
     const baseChance = bossConfig.critChance ??
       BOSS_CRIT_BASE_CHANCE + (this.level.id - 1) * BOSS_CRIT_CHANCE_PER_LEVEL;
     const maxChance = bossConfig.maxCritChance ?? BOSS_CRIT_MAX_CHANCE;
-    const ballCritReduction = this.levelBallsCollected *
-      (bossConfig.critReductionPerBall ?? BOSS_CRIT_REDUCTION_PER_BALL);
 
     return Phaser.Math.Clamp(
-      baseChance - ballCritReduction,
+      baseChance,
       0,
       maxChance,
     );
@@ -5225,8 +5223,9 @@ export class LevelScene extends Phaser.Scene {
   getBossMaxHp() {
     const baseHp = this.getBossConfig().hp ?? BOSS_BASE_HP + this.level.coins.length;
     const retryReduction = this.getBossRetryEaseRatio();
+    const ballHpReduction = this.levelBallsCollected * BOSS_HP_REDUCTION_PER_BALL;
 
-    return Math.max(1, Math.round(baseHp * (1 - retryReduction)));
+    return Math.max(1, Math.ceil(baseHp * (1 - retryReduction) - ballHpReduction));
   }
 
   loseCoins(amount) {
