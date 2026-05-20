@@ -1095,8 +1095,18 @@ const SKY_ROUTE_FALLING_PLATFORM_ADJUSTMENTS = [
     { fromX: 10532, fromY: 470, x: 10412 },
     { fromX: 10782, fromY: 580, x: 10672, y: 550 },
     { fromX: 18322, fromY: 530, x: 18192 },
-    { fromX: 21432, fromY: 530, x: 21292 },
+    { fromX: 21432, fromY: 530, x: 21362 },
     { fromX: 21682, fromY: 640, x: 21542 },
+]
+const SKY_ROUTE_REMOVED_FALLING_PLATFORMS = [
+    { x: 9212, y: 640 },
+    { x: 12322, y: 640 },
+    { x: 15462, y: 580 },
+    { x: 18572, y: 640 },
+    { x: 21542, y: 640 },
+]
+const SKY_ROUTE_MOVING_PLATFORM_ADJUSTMENTS = [
+    { fromX: 21572, fromY: 595, x: 21502 },
 ]
 const SHISHA_CITY_FOG_ZONE_START_X = 260
 const SHISHA_CITY_FOG_ZONE_COUNT = 18
@@ -1231,8 +1241,21 @@ function withLevelMechanics(level) {
     if (level.id === 3) {
         return {
             ...level,
-            fallingPlatforms: (level.fallingPlatforms ?? []).map((platform) => {
-                const adjustment = SKY_ROUTE_FALLING_PLATFORM_ADJUSTMENTS.find((entry) => (
+            fallingPlatforms: (level.fallingPlatforms ?? [])
+                .map((platform) => {
+                    const adjustment = SKY_ROUTE_FALLING_PLATFORM_ADJUSTMENTS.find((entry) => (
+                        platform.x === entry.fromX && platform.y === entry.fromY
+                    ))
+
+                    return adjustment
+                        ? { ...platform, x: adjustment.x, y: adjustment.y ?? platform.y }
+                        : platform
+                })
+                .filter((platform) => !SKY_ROUTE_REMOVED_FALLING_PLATFORMS.some((entry) => (
+                    platform.x === entry.x && platform.y === entry.y
+                ))),
+            movingPlatforms: (level.movingPlatforms ?? []).map((platform) => {
+                const adjustment = SKY_ROUTE_MOVING_PLATFORM_ADJUSTMENTS.find((entry) => (
                     platform.x === entry.fromX && platform.y === entry.fromY
                 ))
 
