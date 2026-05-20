@@ -44,6 +44,17 @@ const MARATHON_STRETCH_SEGMENT_STEP = 780
 const MARATHON_SECOND_FALLING_PLATFORM_X_OFFSET = 250
 const MARATHON_SECOND_FALLING_PLATFORM_Y_OFFSET = 110
 const MARATHON_SECOND_FALLING_PLATFORM_WIDTH = 108
+const ART_CITY_REMOVED_FALLING_PLATFORMS = [
+    { x: 8840, y: 545 },
+    { x: 11960, y: 635 },
+    { x: 15080, y: 485 },
+    { x: 18200, y: 545 },
+    { x: 21070, y: 525 },
+    { x: 21320, y: 635 },
+]
+const ART_CITY_REMOVED_MOVING_PLATFORMS = [
+    { x: 21200, y: 565 },
+]
 const BRIDGE_HILLS_REMOVED_PLATFORMS = [
     { x: 2880, y: 455 },
 ]
@@ -1187,6 +1198,18 @@ function createShishaCityFogZones(level) {
 }
 
 function withLevelMechanics(level) {
+    if (level.id === 1) {
+        return {
+            ...level,
+            fallingPlatforms: (level.fallingPlatforms ?? []).filter((platform) => !ART_CITY_REMOVED_FALLING_PLATFORMS.some((entry) => (
+                platform.x === entry.x && platform.y === entry.y
+            ))),
+            movingPlatforms: (level.movingPlatforms ?? []).filter((platform) => !ART_CITY_REMOVED_MOVING_PLATFORMS.some((entry) => (
+                platform.x === entry.x && platform.y === entry.y
+            ))),
+        }
+    }
+
     if (level.id === 2) {
         return {
             ...level,
