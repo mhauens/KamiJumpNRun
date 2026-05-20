@@ -41,6 +41,24 @@ const CHECKPOINT_TEXTURE_HEIGHT = 56
 const MARATHON_STRETCH_START_GAP = 520
 const MARATHON_STRETCH_SEGMENT_COUNT = 18
 const MARATHON_STRETCH_SEGMENT_STEP = 780
+const MARATHON_SECOND_FALLING_PLATFORM_X_OFFSET = 250
+const MARATHON_SECOND_FALLING_PLATFORM_Y_OFFSET = 110
+const MARATHON_SECOND_FALLING_PLATFORM_WIDTH = 108
+const BRIDGE_HILLS_REMOVED_PLATFORMS = [
+    { x: 2880, y: 455 },
+]
+const BRIDGE_HILLS_REMOVED_FALLING_PLATFORMS = [
+    { x: 7705, y: 610 },
+    { x: 7875, y: 630 },
+    { x: 21720, y: 515 },
+    { x: 21970, y: 625 },
+]
+const BRIDGE_HILLS_REMOVED_MOVING_PLATFORMS = [
+    { x: 21825, y: 535 },
+]
+const BRIDGE_HILLS_ADDED_MOVING_PLATFORMS = [
+    { x: 7665, y: 610, width: 108, height: 28, distance: 280, speed: 90 },
+]
 
 const MARATHON_STRETCH_VARIANTS = [
     {
@@ -463,7 +481,7 @@ const PRE_BOSS_EXTENSIONS = {
             { x: 4640, y: 450 },
             { x: 4820, y: 460 },
             { x: 4940, y: 300 },
-            { x: 5075, y: 470 },
+            { x: 5000, y: 450 },
             { x: 5350, y: 460 },
             { x: 5580, y: 550 },
             { x: 5960, y: 530 },
@@ -933,6 +951,11 @@ function createMarathonStretch(level) {
             y: highY,
             width: narrowWidth,
             height: 28,
+        }, {
+            x: highX + MARATHON_SECOND_FALLING_PLATFORM_X_OFFSET,
+            y: Math.min(level.worldHeight - 220, highY + MARATHON_SECOND_FALLING_PLATFORM_Y_OFFSET),
+            width: MARATHON_SECOND_FALLING_PLATFORM_WIDTH,
+            height: 28,
         })
 
         if ((index + level.id) % 3 === 0) {
@@ -1043,6 +1066,191 @@ function withMarathonStretch(level) {
             ]
             : level.trees,
     }
+}
+
+const SKY_ROUTE_WIND_ZONE_START_X = 560
+const SKY_ROUTE_WIND_ZONE_COUNT = 12
+const SKY_ROUTE_WIND_ZONE_WIDTH_RATIO = 0.58
+const SKY_ROUTE_WIND_ZONE_MAX_WIDTH = 1160
+const SKY_ROUTE_WIND_ZONE_PATTERNS = [
+    { direction: "right", forceX: 105, y: 240, height: 320 },
+    { direction: "left", forceX: -120, y: 180, height: 380 },
+    { direction: "right", forceX: 135, y: 275, height: 360 },
+    { direction: "left", forceX: -125, y: 215, height: 420 },
+    { direction: "right", forceX: 145, y: 250, height: 430 },
+    { direction: "left", forceX: -135, y: 190, height: 470 },
+]
+const SKY_ROUTE_FALLING_PLATFORM_ADJUSTMENTS = [
+    { fromX: 10532, fromY: 470, x: 10412 },
+    { fromX: 10782, fromY: 580, x: 10672, y: 550 },
+    { fromX: 18322, fromY: 530, x: 18192 },
+    { fromX: 21432, fromY: 530, x: 21292 },
+    { fromX: 21682, fromY: 640, x: 21542 },
+]
+const SHISHA_CITY_FOG_ZONE_START_X = 260
+const SHISHA_CITY_FOG_ZONE_COUNT = 18
+const SHISHA_CITY_FOG_ZONE_MAX_WIDTH = 900
+const SHISHA_CITY_FOG_BASE_DENSITY = 0.32
+const SHISHA_CITY_FOG_BASE_SPEED_MULTIPLIER = 0.82
+const SHISHA_CITY_FOG_BASE_AIR_CONTROL_MULTIPLIER = 0.74
+const SHISHA_CITY_FOG_ZONE_PATTERNS = [
+    { y: 150, height: 540, density: 0.3, widthRatio: 0.5, xOffsetRatio: 0.06 },
+    { y: 100, height: 635, density: 0.38, widthRatio: 0.72, xOffsetRatio: 0.18 },
+    { y: 65, height: 690, density: 0.44, widthRatio: 0.56, xOffsetRatio: 0.02 },
+    { y: 120, height: 610, density: 0.35, widthRatio: 0.66, xOffsetRatio: 0.28 },
+    { y: 80, height: 675, density: 0.48, widthRatio: 0.44, xOffsetRatio: 0.12 },
+    { y: 135, height: 590, density: 0.4, widthRatio: 0.62, xOffsetRatio: 0.34 },
+]
+const SHISHA_CITY_PLATFORM_ADJUSTMENTS = [
+    { fromX: 1910, fromY: 400, x: 1825 },
+]
+const SHISHA_CITY_FALLING_PLATFORM_ADJUSTMENTS = [
+    { fromX: 10025, fromY: 365, x: 9965 },
+    { fromX: 14705, fromY: 365, x: 14635 },
+    { fromX: 19385, fromY: 365, x: 19325 },
+]
+const SHISHA_CITY_REMOVED_FALLING_PLATFORMS = [
+    { x: 22445, y: 570 },
+    { x: 22695, y: 680 },
+]
+
+function clampNumber(value, min, max) {
+    return Number(Math.max(min, Math.min(max, value)).toFixed(3))
+}
+
+function createSkyRouteWindZones(level) {
+    const windEndX = Math.max(
+        ...level.coins.map((coin) => coin.x),
+        ...level.balls.map((ball) => ball.x),
+        ...level.checkpoints.map((checkpoint) => checkpoint.x),
+    ) - 260
+    const playableWidth = Math.max(windEndX - SKY_ROUTE_WIND_ZONE_START_X, 0)
+    const segmentWidth = playableWidth / SKY_ROUTE_WIND_ZONE_COUNT
+    const zoneWidth = Math.min(
+        SKY_ROUTE_WIND_ZONE_MAX_WIDTH,
+        Math.round(segmentWidth * SKY_ROUTE_WIND_ZONE_WIDTH_RATIO),
+    )
+
+    return Array.from({ length: SKY_ROUTE_WIND_ZONE_COUNT }, (_, index) => {
+        const pattern = SKY_ROUTE_WIND_ZONE_PATTERNS[index % SKY_ROUTE_WIND_ZONE_PATTERNS.length]
+        const x = Math.round(SKY_ROUTE_WIND_ZONE_START_X + index * segmentWidth + segmentWidth * 0.18)
+
+        return {
+            x,
+            y: pattern.y,
+            width: zoneWidth,
+            height: pattern.height,
+            forceX: pattern.forceX,
+            direction: pattern.direction,
+        }
+    })
+}
+
+function createShishaCityFogZones(level) {
+    const lastPickupX = Math.max(
+        ...level.coins.map((coin) => coin.x),
+        ...level.balls.map((ball) => ball.x),
+        ...level.checkpoints.map((checkpoint) => checkpoint.x),
+    )
+    const fogEndX = lastPickupX + 80
+    const playableWidth = Math.max(fogEndX - SHISHA_CITY_FOG_ZONE_START_X, 0)
+    const segmentWidth = playableWidth / SHISHA_CITY_FOG_ZONE_COUNT
+
+    return Array.from({ length: SHISHA_CITY_FOG_ZONE_COUNT }, (_, index) => {
+        const pattern = SHISHA_CITY_FOG_ZONE_PATTERNS[index % SHISHA_CITY_FOG_ZONE_PATTERNS.length]
+        const x = Math.round(SHISHA_CITY_FOG_ZONE_START_X + index * segmentWidth + segmentWidth * pattern.xOffsetRatio)
+        const width = Math.max(0, Math.min(
+            SHISHA_CITY_FOG_ZONE_MAX_WIDTH,
+            Math.round(segmentWidth * pattern.widthRatio),
+            fogEndX - x,
+        ))
+        const densityOffset = pattern.density - SHISHA_CITY_FOG_BASE_DENSITY
+
+        return {
+            x,
+            y: pattern.y,
+            width,
+            height: pattern.height,
+            density: pattern.density,
+            speedMultiplier: clampNumber(
+                SHISHA_CITY_FOG_BASE_SPEED_MULTIPLIER - densityOffset * 0.35,
+                0.78,
+                0.86,
+            ),
+            airControlMultiplier: clampNumber(
+                SHISHA_CITY_FOG_BASE_AIR_CONTROL_MULTIPLIER - densityOffset * 0.45,
+                0.68,
+                0.8,
+            ),
+        }
+    })
+}
+
+function withLevelMechanics(level) {
+    if (level.id === 2) {
+        return {
+            ...level,
+            platforms: level.platforms.filter((platform) => !BRIDGE_HILLS_REMOVED_PLATFORMS.some((entry) => (
+                platform.x === entry.x && platform.y === entry.y
+            ))),
+            fallingPlatforms: (level.fallingPlatforms ?? []).filter((platform) => !BRIDGE_HILLS_REMOVED_FALLING_PLATFORMS.some((entry) => (
+                platform.x === entry.x && platform.y === entry.y
+            ))),
+            movingPlatforms: [
+                ...(level.movingPlatforms ?? []).filter((platform) => !BRIDGE_HILLS_REMOVED_MOVING_PLATFORMS.some((entry) => (
+                    platform.x === entry.x && platform.y === entry.y
+                ))),
+                ...BRIDGE_HILLS_ADDED_MOVING_PLATFORMS,
+            ],
+        }
+    }
+
+    if (level.id === 3) {
+        return {
+            ...level,
+            fallingPlatforms: (level.fallingPlatforms ?? []).map((platform) => {
+                const adjustment = SKY_ROUTE_FALLING_PLATFORM_ADJUSTMENTS.find((entry) => (
+                    platform.x === entry.fromX && platform.y === entry.fromY
+                ))
+
+                return adjustment
+                    ? { ...platform, x: adjustment.x, y: adjustment.y ?? platform.y }
+                    : platform
+            }),
+            windZones: createSkyRouteWindZones(level),
+        }
+    }
+
+    if (level.id === 4) {
+        return {
+            ...level,
+            platforms: level.platforms.map((platform) => {
+                const adjustment = SHISHA_CITY_PLATFORM_ADJUSTMENTS.find((entry) => (
+                    platform.x === entry.fromX && platform.y === entry.fromY
+                ))
+
+                return adjustment
+                    ? { ...platform, x: adjustment.x, y: adjustment.y ?? platform.y }
+                    : platform
+            }),
+            fallingPlatforms: (level.fallingPlatforms ?? [])
+                .filter((platform) => !SHISHA_CITY_REMOVED_FALLING_PLATFORMS.some((entry) => (
+                    platform.x === entry.x && platform.y === entry.y
+                )))
+                .map((platform) => {
+                    const adjustment = SHISHA_CITY_FALLING_PLATFORM_ADJUSTMENTS.find((entry) => (
+                        platform.x === entry.fromX && platform.y === entry.fromY
+                    ))
+
+                    return adjustment
+                        ? { ...platform, x: adjustment.x, y: adjustment.y ?? platform.y }
+                        : platform
+                }),
+            fogZones: createShishaCityFogZones(level),
+        }
+    }
+
+    return level
 }
 
 export const LEVELS = [
@@ -1167,6 +1375,17 @@ export const LEVELS = [
         checkpoints: [
             { x: 1160, y: 560, label: "Checkpoint 1" },
             { x: 2230, y: 500, label: "Checkpoint 2" },
+        ],
+        slipperyPuddles: [
+            { x: 230, y: 680, displayWidth: 190, surfaceOffset: 8 },
+            { x: 590, y: 610, displayWidth: 150, surfaceOffset: 6 },
+            { x: 1008, y: 520, displayWidth: 84, bodyWidth: 72, surfaceOffset: 0 },
+            { x: 1330, y: 590, displayWidth: 170, surfaceOffset: 8 },
+            { x: 1700, y: 470, displayWidth: 150, surfaceOffset: 6 },
+            { x: 2040, y: 675, displayWidth: 150, surfaceOffset: 6 },
+            { x: 2378, y: 540, displayWidth: 155, surfaceOffset: 6 },
+            { x: 2810, y: 615, displayWidth: 82, bodyWidth: 70, surfaceOffset: 0 },
+            { x: 3135, y: 580, displayWidth: 175, surfaceOffset: 8 },
         ],
         goal: { x: 3270, y: 510, width: 56, height: 90 },
         boss: {
@@ -1315,8 +1534,8 @@ export const LEVELS = [
             { x: 455, y: 600, width: 215, height: 380 },
             { x: 820, y: 535, width: 195, height: 445 },
             { x: 1545, y: 590, width: 220, height: 390 },
-            { x: 1915, y: 505, width: 215, height: 475 },
-            { x: 2295, y: 680, width: 250, height: 300 },
+            { x: 1915, y: 555, width: 215, height: 425 },
+            { x: 2295, y: 620, width: 250, height: 360 },
             { x: 2695, y: 570, width: 215, height: 410 },
             { x: 3045, y: 485, width: 215, height: 495 },
             { x: 3405, y: 665, width: 240, height: 315 },
@@ -1324,8 +1543,8 @@ export const LEVELS = [
             { x: 4145, y: 670, width: 220, height: 310 },
             { x: 1015, y: 475, width: 100, height: 28 },
             { x: 1410, y: 400, width: 105, height: 28 },
-            { x: 1780, y: 340, width: 100, height: 28 },
-            { x: 2150, y: 445, width: 100, height: 28 },
+            { x: 1780, y: 430, width: 100, height: 28 },
+            { x: 2070, y: 445, width: 100, height: 28 },
             { x: 2545, y: 490, width: 100, height: 28 },
             { x: 2925, y: 400, width: 100, height: 28 },
             { x: 3290, y: 360, width: 92, height: 28 },
@@ -1648,4 +1867,4 @@ export const LEVELS = [
             },
         },
     },
-].map(withPreBossExtension).map(withMandatoryChasms).map(withMarathonStretch).map(withBossDefaults)
+].map(withPreBossExtension).map(withMandatoryChasms).map(withMarathonStretch).map(withLevelMechanics).map(withBossDefaults)

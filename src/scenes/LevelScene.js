@@ -40,8 +40,15 @@ import { isAppleTouchDevice } from '../utils/device.js';
 import { readGamepadInput, refreshGamepads } from '../utils/gamepad.js';
 import { loadHighScore, saveHighScore } from '../utils/storage.js';
 
+const windAssetUrls = import.meta.glob('../../assets/shared/wind_*.webp', {
+  eager: true,
+  import: 'default',
+  query: '?url',
+});
+
 const PLAYER_SCALE = 0.11;
 const PLAYER_SPEED = 320;
+const PLAYER_DRAG_X = 1500;
 const JUMP_VELOCITY = -660;
 const FALL_LIMIT_PADDING = 220;
 const FALL_PENALTY = 3;
@@ -60,6 +67,31 @@ const FALLING_PLATFORM_WOBBLE_MS = 320;
 const FALLING_PLATFORM_DROP_SPEED = 640;
 const FALLING_PLATFORM_WOBBLE_OFFSET = 6;
 const FALLING_PLATFORM_WOBBLE_STEP_MS = 36;
+const WIND_FRAME_WIDTH = 627;
+const WIND_FRAME_HEIGHT = 627;
+const WIND_ANIMATION_FRAME_RATE = 11;
+const WIND_GROUND_MULTIPLIER = 0.35;
+const WIND_AIR_MULTIPLIER = 1;
+const WIND_MAX_ABS_VELOCITY = 480;
+const WIND_VISUAL_WIDTH = 190;
+const WIND_VISUAL_HEIGHT = 138;
+const WIND_VISUAL_STEP_X = 190;
+const WIND_VISUAL_STEP_Y = 118;
+const WIND_VISUAL_SCROLL_DISTANCE = 34;
+const WIND_TOAST = 'Seitenwind!';
+const FOG_TEXTURE_KEY = 'shisha-fog-puff';
+const FOG_TEXTURE_WIDTH = 320;
+const FOG_TEXTURE_HEIGHT = 170;
+const FOG_VISUAL_WIDTH = 370;
+const FOG_VISUAL_HEIGHT = 205;
+const FOG_VISUAL_STEP_X = 205;
+const FOG_VISUAL_STEP_Y = 105;
+const FOG_VISUAL_DRIFT_DISTANCE = 46;
+const FOG_TOAST = 'Dichter Rauch!';
+const FOG_SPEED_MULTIPLIER = 0.82;
+const FOG_AIR_CONTROL_MULTIPLIER = 0.74;
+const FOG_MIN_SPEED_MULTIPLIER = 0.76;
+const FOG_MIN_AIR_CONTROL_MULTIPLIER = 0.68;
 const HUD_PANEL_WIDTH = 370;
 const HUD_PANEL_HEIGHT = 146;
 const HUD_TEXT_X = 34;
@@ -189,6 +221,22 @@ const PAINT_PUDDLE_SPAWN_COOLDOWN_MS = 5000;
 const PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD = 128;
 const PAINT_PUDDLE_STEP_TOLERANCE = 18;
 const PAINT_PUDDLE_STEP_HORIZONTAL_INSET = 10;
+const SLIPPERY_PUDDLE_TEXTURE_KEY = 'boss-2-puddle';
+const SLIPPERY_PUDDLE_DISPLAY_WIDTH = 170;
+const SLIPPERY_PUDDLE_BODY_WIDTH = 120;
+const SLIPPERY_PUDDLE_BODY_HEIGHT = 34;
+const SLIPPERY_PUDDLE_BODY_DISPLAY_WIDTH_RATIO = 0.82;
+const SLIPPERY_PUDDLE_BODY_SURFACE_OVERLAP = 10;
+const SLIPPERY_PUDDLE_SURFACE_OFFSET = 0;
+const SLIPPERY_PUDDLE_EFFECT_MS = 48;
+const SLIPPERY_PUDDLE_DRAG_X = 80;
+const SLIPPERY_PUDDLE_SLIDE_SPEED = 390;
+const SLIPPERY_PUDDLE_FOOT_WIDTH = 14;
+const SLIPPERY_PUDDLE_SURFACE_TOUCH_TOLERANCE = 6;
+const SLIPPERY_PUDDLE_PLATFORM_Y_TOLERANCE = 96;
+const SLIPPERY_PUDDLE_AUTO_LEVEL_ID = 2;
+const SLIPPERY_PUDDLE_AUTO_MIN_SPACING = 520;
+const SLIPPERY_PUDDLE_AUTO_BOSS_PADDING = 240;
 const CAKE_RAIN_PROJECTILE_COUNT = 8;
 const CAKE_RAIN_PROJECTILE_DELAY_MS = 115;
 const CAKE_RAIN_FALL_SPEED = 420;
@@ -307,6 +355,8 @@ export class LevelScene extends Phaser.Scene {
     this.bossBottomPaddingByTexture = new Map();
     this.bossBodyBounds = null;
     this.playerSlowUntil = 0;
+    this.playerSlipperyUntil = 0;
+    this.playerSlideDirection = 1;
     this.playerJumpBlockedUntil = 0;
     this.nextBossTreeSpawnAt = 0;
     this.nextFirstAidKitSpawnAt = 0;
@@ -320,6 +370,12 @@ export class LevelScene extends Phaser.Scene {
     this.nextBossDodgeAt = 0;
     this.bossUnstickOverlapStartedAt = 0;
     this.nextBossUnstickSlideAt = 0;
+    this.windToastShown = false;
+    this.windZoneVisuals = [];
+    this.fogToastShown = false;
+    this.fogZoneVisuals = [];
+    this.fogZoneTweens = [];
+    this.fogZonesVisible = true;
     this.gamepadButtons = {};
     this.gamepadInput = null;
     this.touchInput = this.createTouchInputState();
@@ -336,6 +392,7 @@ export class LevelScene extends Phaser.Scene {
 
   preload() {
     this.loadSfxAudio();
+    this.loadWindAssets();
     loadBossAssetsForLevel(this, this.level.id);
     this.loadBossSplashAudioForCurrentLevel();
   }
@@ -370,6 +427,10 @@ export class LevelScene extends Phaser.Scene {
     this.createPlatforms();
     this.createMovingPlatforms();
     this.createFallingPlatforms();
+    this.createSlipperyPuddles();
+    this.createWindAnimations();
+    this.createWindZones();
+    this.createFogZones();
     this.createPlayer();
     this.createCollectibles();
     this.createCheckpoints();
@@ -812,6 +873,25 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  loadWindAssets() {
+    [
+      { direction: 'left', path: '../../assets/shared/wind_left.webp' },
+      { direction: 'right', path: '../../assets/shared/wind_right.webp' },
+    ].forEach(({ direction, path }) => {
+      const key = `wind-${direction}`;
+      const url = windAssetUrls[path];
+
+      if (!url || this.textures.exists(key)) {
+        return;
+      }
+
+      this.load.spritesheet(key, url, {
+        frameWidth: WIND_FRAME_WIDTH,
+        frameHeight: WIND_FRAME_HEIGHT,
+      });
+    });
+  }
+
   createBossSplashSoundPool() {
     Object.values(BOSS_SPLASH_AUDIO[this.level.id] ?? {})
       .flat()
@@ -1101,9 +1181,159 @@ export class LevelScene extends Phaser.Scene {
       this.createPlatformVisual(platform);
 
       if (showPlatformNumbers) {
-        this.createPlatformNumberLabel(platform, index);
+        this.createPlatformReferenceLabel(platform, `P${index + 1}`);
       }
     });
+  }
+
+  createSlipperyPuddles() {
+    this.slipperyPuddles = this.physics.add.staticGroup();
+
+    if (!this.level.slipperyPuddles?.length || !this.textures.exists(SLIPPERY_PUDDLE_TEXTURE_KEY)) {
+      return;
+    }
+
+    this.getSlipperyPuddleEntries().forEach((entry) => {
+      this.createSlipperyPuddle(entry);
+    });
+  }
+
+  getSlipperyPuddleEntries() {
+    const manualEntries = this.level.slipperyPuddles ?? [];
+
+    if (this.level.id !== SLIPPERY_PUDDLE_AUTO_LEVEL_ID) {
+      return manualEntries;
+    }
+
+    const autoEntries = this.createAutoSlipperyPuddleEntries(manualEntries);
+
+    return [...manualEntries, ...autoEntries];
+  }
+
+  createAutoSlipperyPuddleEntries(manualEntries) {
+    const maxX = (this.level.boss?.triggerX ?? this.level.goal.x) - SLIPPERY_PUDDLE_AUTO_BOSS_PADDING;
+    const platformEntries = [
+      ...this.level.platforms.map((platform) => ({ platform, falling: false })),
+      ...(this.fallingPlatforms?.children.entries ?? []).map((platform) => ({ platform, falling: true })),
+    ]
+      .filter(({ platform }) => (
+        platform.x + (platform.width ?? platform.displayWidth) > this.level.spawn.x + 180 &&
+        platform.x < maxX &&
+        (platform.width ?? platform.displayWidth) >= 80
+      ))
+      .sort((left, right) => left.platform.x - right.platform.x);
+    const autoEntries = [];
+    let lastX = Math.min(...manualEntries.map((entry) => entry.x), this.level.spawn.x);
+
+    platformEntries.forEach(({ platform, falling }) => {
+      const width = platform.width ?? platform.displayWidth;
+      const x = Phaser.Math.Clamp(
+        platform.x + width * (falling ? 0.5 : 0.56),
+        platform.x + Math.min(48, width * 0.35),
+        platform.x + width - Math.min(48, width * 0.35),
+      );
+
+      if (x > maxX || x - lastX < SLIPPERY_PUDDLE_AUTO_MIN_SPACING) {
+        return;
+      }
+
+      if (manualEntries.some((entry) => Math.abs(entry.x - x) < 220)) {
+        return;
+      }
+
+      const displayWidth = width < 120
+        ? Math.max(76, width - 12)
+        : Phaser.Math.Clamp(Math.round(width * 0.64), 135, 190);
+
+      autoEntries.push({
+        x: Math.round(x),
+        y: platform.y,
+        displayWidth,
+        surfaceOffset: width < 120 ? 0 : 6,
+      });
+      lastX = x;
+    });
+
+    return autoEntries;
+  }
+
+  createSlipperyPuddle(entry) {
+    const platform = this.resolveSlipperyPuddlePlatform(entry);
+
+    if (!platform) {
+      return;
+    }
+
+    const texture = this.textures.get(SLIPPERY_PUDDLE_TEXTURE_KEY);
+    const source = texture.getSourceImage();
+    const bounds = this.getTextureAlphaBounds(
+      SLIPPERY_PUDDLE_TEXTURE_KEY,
+      PAINT_PUDDLE_CONTENT_ALPHA_THRESHOLD,
+    );
+    const displayWidth = entry.displayWidth ?? SLIPPERY_PUDDLE_DISPLAY_WIDTH;
+    const scale = displayWidth / source.width;
+    const displayHeight = source.height * scale;
+    const contentCenterX = bounds.x + bounds.width / 2;
+    const imageX = entry.x + (source.width / 2 - contentCenterX) * scale;
+    const imageY = platform.y - (entry.surfaceOffset ?? SLIPPERY_PUDDLE_SURFACE_OFFSET) +
+      (source.height / 2 - bounds.y) * scale;
+    const puddle = this.slipperyPuddles
+      .create(imageX, imageY, ...getTextureArgs(SLIPPERY_PUDDLE_TEXTURE_KEY))
+      .setOrigin(0.5)
+      .setDisplaySize(displayWidth, displayHeight)
+      .setDepth(6);
+    puddle.setData('logicalTextureKey', SLIPPERY_PUDDLE_TEXTURE_KEY);
+
+    puddle.refreshBody();
+
+    const contentDisplayWidth = bounds.width * scale;
+    const bodyWidth = Math.min(
+      Math.max(
+        entry.bodyWidth ?? SLIPPERY_PUDDLE_BODY_WIDTH,
+        contentDisplayWidth * 0.92,
+        displayWidth * SLIPPERY_PUDDLE_BODY_DISPLAY_WIDTH_RATIO,
+      ),
+      displayWidth,
+    );
+    const bodyHeight = entry.bodyHeight ?? SLIPPERY_PUDDLE_BODY_HEIGHT;
+    const bodyOffsetX = bounds.x * scale + (contentDisplayWidth - bodyWidth) / 2;
+    const bodyOffsetY = platform.y - puddle.y - SLIPPERY_PUDDLE_BODY_SURFACE_OVERLAP;
+    puddle.setData('bodyWidth', bodyWidth);
+    puddle.setData('bodyHeight', bodyHeight);
+    puddle.setData('bodyOffsetX', bodyOffsetX);
+    puddle.setData('surfaceY', platform.y);
+    puddle.body.setSize(bodyWidth, bodyHeight);
+    puddle.body.setOffset(bodyOffsetX, bodyOffsetY);
+
+    this.bindSlipperyPuddleToFallingPlatform(puddle, platform);
+  }
+
+  resolveSlipperyPuddlePlatform(entry) {
+    const candidates = [
+      ...this.level.platforms,
+      ...(this.fallingPlatforms?.children.entries ?? []),
+    ].filter((platform) => (
+      entry.x >= platform.x &&
+      entry.x <= platform.x + (platform.width ?? platform.displayWidth)
+    ));
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return candidates
+      .filter((platform) => Math.abs(platform.y - entry.y) <= SLIPPERY_PUDDLE_PLATFORM_Y_TOLERANCE)
+      .sort((left, right) => Math.abs(left.y - entry.y) - Math.abs(right.y - entry.y))[0] ?? null;
+  }
+
+  bindSlipperyPuddleToFallingPlatform(puddle, platform) {
+    if (!platform.getData?.('label')?.startsWith('F')) {
+      return;
+    }
+
+    puddle.setData('fallingPlatform', platform);
+    puddle.setData('fallingPlatformOffsetX', puddle.x - platform.x);
+    puddle.setData('fallingPlatformOffsetY', puddle.y - platform.y);
   }
 
   createMovingPlatforms() {
@@ -1152,7 +1382,12 @@ export class LevelScene extends Phaser.Scene {
       immovable: true,
     });
 
-    this.level.fallingPlatforms?.forEach((platform, index) => {
+    const showPlatformNumbers = shouldShowPlatformNumbers();
+
+    const fallingPlatforms = [...(this.level.fallingPlatforms ?? [])]
+      .sort((left, right) => left.x - right.x);
+
+    fallingPlatforms.forEach((platform, index) => {
       const block = this.add
         .tileSprite(
           platform.x,
@@ -1179,16 +1414,212 @@ export class LevelScene extends Phaser.Scene {
       block.setData('label', `F${index + 1}`);
 
       this.fallingPlatforms.add(block);
+
+      if (showPlatformNumbers) {
+        this.createPlatformReferenceLabel(platform, `F${index + 1}`);
+      }
     });
   }
 
-  createPlatformNumberLabel(platform, index) {
+  createWindAnimations() {
+    ['left', 'right'].forEach((direction) => {
+      const key = `wind-${direction}`;
+
+      if (!this.textures.exists(key) || this.anims.exists(key)) {
+        return;
+      }
+
+      this.anims.create({
+        key,
+        frames: this.anims.generateFrameNumbers(key, { start: 0, end: 3 }),
+        frameRate: WIND_ANIMATION_FRAME_RATE,
+        repeat: -1,
+      });
+    });
+  }
+
+  createWindZones() {
+    this.windZoneVisuals = [];
+
+    this.level.windZones?.forEach((zone) => {
+      const direction = this.getWindDirection(zone);
+      const textureKey = `wind-${direction}`;
+
+      if (this.textures.exists(textureKey) && this.anims.exists(textureKey)) {
+        this.createWindSpriteZone(zone, direction, textureKey);
+        return;
+      }
+
+      this.createWindFallbackZone(zone, direction);
+    });
+  }
+
+  createWindSpriteZone(zone, direction, textureKey) {
+    const directionSign = direction === 'left' ? -1 : 1;
+    const sprites = [];
+    const startX = zone.x + WIND_VISUAL_WIDTH * 0.45;
+    const endX = zone.x + zone.width;
+    const startY = zone.y + WIND_VISUAL_HEIGHT * 0.45;
+    const endY = zone.y + zone.height;
+
+    for (let y = startY; y <= endY; y += WIND_VISUAL_STEP_Y) {
+      for (let x = startX; x <= endX; x += WIND_VISUAL_STEP_X) {
+        const sprite = this.add
+          .sprite(x, y, textureKey)
+          .setDisplaySize(WIND_VISUAL_WIDTH, WIND_VISUAL_HEIGHT)
+          .setAlpha(0.44)
+          .setDepth(4);
+
+        sprite.play(textureKey);
+        sprites.push(sprite);
+      }
+    }
+
+    sprites.forEach((sprite, index) => {
+      const offset = (index % 3) * 90;
+      sprite.x -= directionSign * WIND_VISUAL_SCROLL_DISTANCE * 0.5;
+      this.tweens.add({
+        targets: sprite,
+        x: sprite.x + directionSign * WIND_VISUAL_SCROLL_DISTANCE,
+        duration: 850,
+        delay: offset,
+        ease: 'Sine.inOut',
+        yoyo: true,
+        repeat: -1,
+      });
+    });
+
+    this.windZoneVisuals.push(...sprites);
+  }
+
+  createWindFallbackZone(zone, direction) {
+    const directionSign = direction === 'left' ? -1 : 1;
+    const graphics = this.add.graphics().setDepth(4).setAlpha(0.38);
+
+    graphics.lineStyle(5, 0xd9f7ff, 0.82);
+
+    for (let y = zone.y + 46; y < zone.y + zone.height; y += 42) {
+      for (let x = zone.x + 35; x < zone.x + zone.width; x += 150) {
+        const lineLength = 84;
+        const tipX = x + directionSign * lineLength;
+
+        graphics.beginPath();
+        graphics.moveTo(x, y);
+        graphics.lineTo(tipX, y);
+        graphics.strokePath();
+        graphics.lineBetween(tipX, y, tipX - directionSign * 18, y - 12);
+        graphics.lineBetween(tipX, y, tipX - directionSign * 18, y + 12);
+      }
+    }
+
+    this.windZoneVisuals.push(graphics);
+  }
+
+  getWindDirection(zone) {
+    if (zone.direction === 'left' || zone.direction === 'right') {
+      return zone.direction;
+    }
+
+    return (zone.forceX ?? 0) < 0 ? 'left' : 'right';
+  }
+
+  createFogZones() {
+    this.fogZoneVisuals = [];
+    this.fogZoneTweens = [];
+    this.fogZonesVisible = true;
+
+    if (!this.level.fogZones?.length) {
+      return;
+    }
+
+    this.createFogPuffTexture();
+
+    this.level.fogZones.forEach((zone, zoneIndex) => {
+      this.createFogZone(zone, zoneIndex);
+    });
+  }
+
+  createFogPuffTexture() {
+    if (this.textures.exists(FOG_TEXTURE_KEY)) {
+      return;
+    }
+
+    const texture = this.textures.createCanvas(
+      FOG_TEXTURE_KEY,
+      FOG_TEXTURE_WIDTH,
+      FOG_TEXTURE_HEIGHT,
+    );
+    const context = texture.getContext();
+    const centerX = FOG_TEXTURE_WIDTH / 2;
+    const centerY = FOG_TEXTURE_HEIGHT / 2;
+    const gradient = context.createRadialGradient(
+      centerX,
+      centerY,
+      FOG_TEXTURE_HEIGHT * 0.08,
+      centerX,
+      centerY,
+      FOG_TEXTURE_WIDTH * 0.52,
+    );
+
+    gradient.addColorStop(0, 'rgba(235, 249, 255, 0.9)');
+    gradient.addColorStop(0.35, 'rgba(218, 236, 244, 0.48)');
+    gradient.addColorStop(0.72, 'rgba(190, 212, 224, 0.2)');
+    gradient.addColorStop(1, 'rgba(190, 212, 224, 0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, FOG_TEXTURE_WIDTH, FOG_TEXTURE_HEIGHT);
+    texture.refresh();
+  }
+
+  createFogZone(zone, zoneIndex) {
+    const density = Phaser.Math.Clamp(zone.density ?? 0.25, 0.12, 0.56);
+    const startX = zone.x + FOG_VISUAL_WIDTH * 0.28;
+    const endX = zone.x + zone.width + FOG_VISUAL_WIDTH * 0.18;
+    const startY = zone.y + FOG_VISUAL_HEIGHT * 0.35;
+    const endY = zone.y + zone.height;
+    let puffIndex = 0;
+
+    for (let y = startY; y <= endY; y += FOG_VISUAL_STEP_Y) {
+      for (let x = startX; x <= endX; x += FOG_VISUAL_STEP_X) {
+        const variant = (zoneIndex * 17 + puffIndex * 11) % 29;
+        const offsetX = (variant % 5) * 18;
+        const offsetY = (variant % 7) * 9;
+        const scale = 0.9 + (variant % 4) * 0.1;
+        const baseAlpha = Phaser.Math.Clamp(density * (0.98 + (variant % 3) * 0.14), 0.16, 0.58);
+        const sprite = this.add
+          .image(x + offsetX, y + offsetY, FOG_TEXTURE_KEY)
+          .setDisplaySize(FOG_VISUAL_WIDTH * scale, FOG_VISUAL_HEIGHT * scale)
+          .setAlpha(baseAlpha)
+          .setDepth(12)
+          .setTint(0xe4f5fa);
+
+        sprite.setData('baseAlpha', baseAlpha);
+        sprite.setData('zone', zone);
+
+        const tween = this.tweens.add({
+          targets: sprite,
+          x: sprite.x + FOG_VISUAL_DRIFT_DISTANCE + (variant % 3) * 10,
+          alpha: Phaser.Math.Clamp(baseAlpha * 1.22, 0.18, 0.68),
+          duration: 2300 + variant * 55,
+          delay: (variant % 6) * 120,
+          ease: 'Sine.inOut',
+          yoyo: true,
+          repeat: -1,
+        });
+
+        this.fogZoneVisuals.push(sprite);
+        this.fogZoneTweens.push(tween);
+        puffIndex += 1;
+      }
+    }
+  }
+
+  createPlatformReferenceLabel(platform, label) {
     const labelY = platform.height > PLATFORM_SURFACE_HEIGHT
       ? platform.y + PLATFORM_NUMBER_LABEL_OFFSET
       : platform.y + platform.height + PLATFORM_NUMBER_LABEL_OFFSET;
 
     this.add
-      .text(platform.x + platform.width / 2, labelY, `P${index + 1}`, {
+      .text(platform.x + platform.width / 2, labelY, label, {
         fontFamily: 'Verdana, sans-serif',
         fontSize: '18px',
         fontStyle: 'bold',
@@ -1252,7 +1683,7 @@ export class LevelScene extends Phaser.Scene {
     this.player.setData('logicalTextureKey', 'char-stand');
 
     this.player.setBounce(0);
-    this.player.setDragX(1500);
+    this.player.setDragX(PLAYER_DRAG_X);
     this.player.setMaxVelocity(420, 1100);
     this.configurePlayerBody();
     this.playerState = 'stand';
@@ -2084,6 +2515,13 @@ export class LevelScene extends Phaser.Scene {
     );
     this.physics.add.overlap(
       this.player,
+      this.slipperyPuddles,
+      this.handleSlipperyPuddleOverlap,
+      null,
+      this,
+    );
+    this.physics.add.overlap(
+      this.player,
       this.trees,
       this.handleTreeOverlap,
       this.isPlayerInTreeAttackBox,
@@ -2111,6 +2549,7 @@ export class LevelScene extends Phaser.Scene {
     this.updateHudHelpText();
     this.updateMovingPlatforms();
     this.updateFallingPlatforms();
+    this.updateFogZones();
 
     if (this.levelComplete) {
       this.player.setVelocityX(0);
@@ -2136,6 +2575,7 @@ export class LevelScene extends Phaser.Scene {
     this.updateBossTrigger();
     this.updateBossExit();
     this.handleMovement();
+    this.applyLevelWind();
     this.checkBossStomp();
     this.updateBoss();
     this.checkBossUnstickSlide();
@@ -2208,6 +2648,7 @@ export class LevelScene extends Phaser.Scene {
     }
 
     if (this.bossIntroActive || this.bossCountdownActive || this.awaitingBossRetry || this.playerIsHit) {
+      this.updatePlayerSurfaceDrag(false);
       this.player.setVelocityX(0);
       this.consumeTouchJumpPress();
       return;
@@ -2236,12 +2677,27 @@ export class LevelScene extends Phaser.Scene {
       this.touchInput?.right;
     const touchJumpJustPressed = this.consumeTouchJumpPress();
 
-    const playerSpeed = this.getPlayerSpeed();
+    const activeFogZone = this.getActiveFogZone();
+    const fogMovementMultiplier = this.getFogMovementMultiplier(activeFogZone, groundedNow);
+    const playerSpeed = this.getPlayerSpeed() * fogMovementMultiplier;
+    this.refreshPlayerSlipperyPuddleContact();
+    const onSlipperyPuddle = this.isPlayerOnSlipperyPuddle();
+    this.updatePlayerSurfaceDrag(onSlipperyPuddle);
 
-    if (movingLeft) {
+    if (onSlipperyPuddle) {
+      this.applySlipperyIdleSlide();
+
+      if (movingLeft) {
+        this.player.setFlipX(true);
+      } else if (movingRight) {
+        this.player.setFlipX(false);
+      }
+    } else if (movingLeft) {
+      this.playerSlideDirection = -1;
       this.player.setVelocityX(-playerSpeed);
       this.player.setFlipX(true);
     } else if (movingRight) {
+      this.playerSlideDirection = 1;
       this.player.setVelocityX(playerSpeed);
       this.player.setFlipX(false);
     } else {
@@ -2253,6 +2709,7 @@ export class LevelScene extends Phaser.Scene {
       this.gamepadInput?.actionJustPressed ||
       touchJumpJustPressed
     ) && canJump) {
+      this.playerSlipperyUntil = 0;
       this.player.setVelocityY(JUMP_VELOCITY);
       this.playJumpSfx();
       jumpedThisFrame = true;
@@ -2305,6 +2762,39 @@ export class LevelScene extends Phaser.Scene {
       ) {
         platform.body.enable = false;
         platform.setActive(false).setVisible(false);
+      }
+    });
+
+    this.updateSlipperyPuddlesOnFallingPlatforms();
+  }
+
+  updateSlipperyPuddlesOnFallingPlatforms() {
+    this.slipperyPuddles?.children.each((puddle) => {
+      const platform = puddle.getData('fallingPlatform');
+
+      if (!platform) {
+        return;
+      }
+
+      const visible = platform.active && platform.visible;
+      const x = platform.x + puddle.getData('fallingPlatformOffsetX');
+      const y = platform.y + puddle.getData('fallingPlatformOffsetY');
+
+      puddle.setActive(visible).setVisible(visible);
+      puddle.setPosition(x, y);
+      puddle.setData('surfaceY', platform.y);
+
+      if (puddle.body) {
+        puddle.body.enable = visible;
+        puddle.body.reset(x, y);
+        puddle.body.setSize(
+          puddle.getData('bodyWidth'),
+          puddle.getData('bodyHeight'),
+        );
+        puddle.body.setOffset(
+          puddle.getData('bodyOffsetX'),
+          platform.y - y - SLIPPERY_PUDDLE_BODY_SURFACE_OVERLAP,
+        );
       }
     });
   }
@@ -2410,12 +2900,183 @@ export class LevelScene extends Phaser.Scene {
       platform.setData('falling', false);
       platform.setData('standTimer', null);
     });
+
+    this.updateSlipperyPuddlesOnFallingPlatforms();
   }
 
   getPlayerSpeed() {
     return this.time.now < this.playerSlowUntil
       ? PLAYER_SPEED * PAINT_PUDDLE_SLOW_MULTIPLIER
       : PLAYER_SPEED;
+  }
+
+  isPlayerOnSlipperyPuddle() {
+    return this.time.now < this.playerSlipperyUntil;
+  }
+
+  refreshPlayerSlipperyPuddleContact() {
+    if (!this.player?.body || !this.slipperyPuddles || this.bossFightActive) {
+      return;
+    }
+
+    this.slipperyPuddles.children.each((puddle) => {
+      if (!puddle.active || !this.isPlayerSteppingOnSlipperyPuddle(this.player, puddle)) {
+        return;
+      }
+
+      this.playerSlipperyUntil = Math.max(
+        this.playerSlipperyUntil,
+        this.time.now + SLIPPERY_PUDDLE_EFFECT_MS,
+      );
+
+      if (Math.abs(this.player.body.velocity.x) > 5) {
+        this.playerSlideDirection = Math.sign(this.player.body.velocity.x);
+      }
+    });
+  }
+
+  updatePlayerSurfaceDrag(onSlipperyPuddle) {
+    if (!this.player?.body) {
+      return;
+    }
+
+    this.player.setDragX(onSlipperyPuddle ? SLIPPERY_PUDDLE_DRAG_X : PLAYER_DRAG_X);
+  }
+
+  applySlipperyIdleSlide() {
+    const body = this.player?.body;
+
+    if (!body) {
+      return;
+    }
+
+    const direction = Math.abs(body.velocity.x) > 5
+      ? Math.sign(body.velocity.x)
+      : this.playerSlideDirection;
+    this.player.setVelocityX(direction * SLIPPERY_PUDDLE_SLIDE_SPEED);
+  }
+
+  getFogMovementMultiplier(zone, groundedNow) {
+    if (!zone || this.isLevelFogDisabled()) {
+      return 1;
+    }
+
+    if (groundedNow) {
+      return Phaser.Math.Clamp(
+        zone.speedMultiplier ?? FOG_SPEED_MULTIPLIER,
+        FOG_MIN_SPEED_MULTIPLIER,
+        1,
+      );
+    }
+
+    return Phaser.Math.Clamp(
+      zone.airControlMultiplier ?? FOG_AIR_CONTROL_MULTIPLIER,
+      FOG_MIN_AIR_CONTROL_MULTIPLIER,
+      1,
+    );
+  }
+
+  applyLevelWind() {
+    if (this.isLevelWindDisabled() || !this.player?.body || !this.level.windZones?.length) {
+      return;
+    }
+
+    const windZone = this.getActiveWindZone();
+
+    if (!windZone) {
+      return;
+    }
+
+    if (!this.windToastShown) {
+      this.windToastShown = true;
+      this.showToast(WIND_TOAST);
+    }
+
+    const body = this.player.body;
+    const groundedNow = body.blocked.down || body.touching.down || body.wasTouching.down;
+    const multiplier = groundedNow ? WIND_GROUND_MULTIPLIER : WIND_AIR_MULTIPLIER;
+    const windVelocity = (windZone.forceX ?? 0) * multiplier;
+    const nextVelocityX = Phaser.Math.Clamp(
+      body.velocity.x + windVelocity,
+      -WIND_MAX_ABS_VELOCITY,
+      WIND_MAX_ABS_VELOCITY,
+    );
+
+    this.player.setVelocityX(nextVelocityX);
+  }
+
+  isLevelWindDisabled() {
+    return this.levelComplete ||
+      this.isRespawning ||
+      this.awaitingBossRetry ||
+      this.bossIntroActive ||
+      this.bossCountdownActive ||
+      this.bossFightActive ||
+      this.playerIsHit ||
+      (this.level.boss?.triggerX && this.player?.x >= this.level.boss.triggerX);
+  }
+
+  updateFogZones() {
+    if (!this.fogZoneVisuals?.length) {
+      return;
+    }
+
+    const visible = !this.isLevelFogDisabled();
+
+    if (visible !== this.fogZonesVisible) {
+      this.fogZonesVisible = visible;
+      this.fogZoneVisuals.forEach((visual) => {
+        visual.setVisible(visible);
+      });
+      this.fogZoneTweens.forEach((tween) => {
+        if (visible) {
+          tween.resume();
+        } else {
+          tween.pause();
+        }
+      });
+    }
+
+    if (!visible || !this.player?.body || !this.level.fogZones?.length) {
+      return;
+    }
+
+    if (!this.fogToastShown && this.getActiveFogZone()) {
+      this.fogToastShown = true;
+      this.showToast(FOG_TOAST);
+    }
+  }
+
+  isLevelFogDisabled() {
+    return this.levelComplete ||
+      this.isRespawning ||
+      this.awaitingBossRetry ||
+      this.bossIntroActive ||
+      this.bossCountdownActive ||
+      this.bossFightActive ||
+      (this.level.boss?.triggerX && this.player?.x >= this.level.boss.triggerX);
+  }
+
+  getActiveFogZone() {
+    const body = this.player.body;
+
+    return this.level.fogZones?.find((zone) => (
+      body.right > zone.x &&
+      body.left < zone.x + zone.width &&
+      body.bottom > zone.y &&
+      body.top < zone.y + zone.height
+    )) ?? null;
+  }
+
+  getActiveWindZone() {
+    const body = this.player.body;
+
+    return this.level.windZones.find((zone) => (
+      body.right > zone.x &&
+      body.left < zone.x + zone.width &&
+      body.bottom > zone.y &&
+      body.top < zone.y + zone.height
+    ));
   }
 
   isPlayerJumpBlocked() {
@@ -4548,6 +5209,46 @@ export class LevelScene extends Phaser.Scene {
       delay: PAINT_PUDDLE_TRIGGERED_LIFETIME_MS,
       onComplete: () => puddle.destroy(),
     });
+  }
+
+  handleSlipperyPuddleOverlap(player, puddle) {
+    if (
+      !puddle.active ||
+      this.bossFightActive ||
+      !this.isPlayerSteppingOnSlipperyPuddle(player, puddle)
+    ) {
+      return;
+    }
+
+    this.playerSlipperyUntil = Math.max(
+      this.playerSlipperyUntil,
+      this.time.now + SLIPPERY_PUDDLE_EFFECT_MS,
+    );
+
+    if (Math.abs(player.body.velocity.x) > 5) {
+      this.playerSlideDirection = Math.sign(player.body.velocity.x);
+    }
+  }
+
+  isPlayerSteppingOnSlipperyPuddle(player, puddle) {
+    if (!player.body || !puddle.body) {
+      return false;
+    }
+
+    const playerBottom = player.body.bottom;
+    const playerFootX = player.body.center.x;
+    const playerFootLeft = playerFootX - SLIPPERY_PUDDLE_FOOT_WIDTH / 2;
+    const playerFootRight = playerFootX + SLIPPERY_PUDDLE_FOOT_WIDTH / 2;
+    const surfaceY = puddle.getData('surfaceY') ?? puddle.body.top + SLIPPERY_PUDDLE_BODY_SURFACE_OVERLAP;
+    const horizontalInset = Math.min(2, puddle.body.width * 0.04);
+    const withinPuddleHorizontally =
+      playerFootRight >= puddle.body.left + horizontalInset &&
+      playerFootLeft <= puddle.body.right - horizontalInset;
+
+    return withinPuddleHorizontally &&
+      player.body.velocity.y >= -20 &&
+      playerBottom >= surfaceY - SLIPPERY_PUDDLE_SURFACE_TOUCH_TOLERANCE &&
+      playerBottom <= surfaceY + PAINT_PUDDLE_STEP_TOLERANCE;
   }
 
   isPlayerSteppingOnPaintPuddle(player, puddle) {
