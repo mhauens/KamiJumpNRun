@@ -90,8 +90,8 @@ const FOG_VISUAL_DRIFT_DISTANCE = 46;
 const FOG_TOAST = 'Dichter Rauch!';
 const FOG_SPEED_MULTIPLIER = 0.82;
 const FOG_AIR_CONTROL_MULTIPLIER = 0.74;
-const FOG_MIN_SPEED_MULTIPLIER = 0.76;
-const FOG_MIN_AIR_CONTROL_MULTIPLIER = 0.68;
+const FOG_MIN_SPEED_MULTIPLIER = 0.68;
+const FOG_MIN_AIR_CONTROL_MULTIPLIER = 0.6;
 const HUD_PANEL_WIDTH = 370;
 const HUD_PANEL_HEIGHT = 146;
 const HUD_TEXT_X = 34;
@@ -243,17 +243,16 @@ const CAKE_RAIN_FALL_SPEED = 420;
 const CAKE_RAIN_SPAWN_TOP_PADDING = 34;
 const CAKE_RAIN_ARENA_MARGIN = 45;
 const CAKE_RAIN_LANE_JITTER_MULTIPLIER = 0.22;
-const CAKE_RAIN_BOSS_CLEAR_RADIUS = 170;
 const CAKE_RAIN_ROTATION_DEGREES = 90;
 const TREE_ATTACK_ANIMATION_KEY = 'tree-hit';
 const TREE_DISPLAY_HEIGHT = 175;
 const TREE_FOOT_SINK = 18;
 const TREE_ATTACK_BOX_WIDTH_MULTIPLIER = 0.78;
 const TREE_ATTACK_BOX_HEIGHT = 78;
-const TREE_NORMAL_ATTACK_CHANCE = 0.45;
+const TREE_NORMAL_ATTACK_CHANCE = 0.52;
 const TREE_NORMAL_COIN_PENALTY = 1;
 const TREE_BOSS_ATTACK_CHANCE = 0.65;
-const TREE_NORMAL_COUNT = 3;
+const TREE_NORMAL_COUNT = 5;
 const TREE_NORMAL_MIN_PLATFORM_WIDTH = 220;
 const TREE_NORMAL_START_PADDING = 220;
 const TREE_NORMAL_RESPAWN_PADDING = 180;
@@ -286,6 +285,9 @@ const CARD_SPREAD_ATTACK_CHANCE = 0.28;
 const CARD_SPREAD_MIN_PROJECTILES = 3;
 const CARD_SPREAD_MAX_PROJECTILES = 5;
 const CARD_SPREAD_VERTICAL_SPEED_STEP = 70;
+const CARD_SPREAD_PATTERN_FAN = 'fan';
+const CARD_SPREAD_PATTERN_DENSE = 'dense';
+const CARD_SPREAD_PATTERN_STAGGERED = 'staggered';
 const CHARGE_ATTACK_BOSS_ID = 5;
 const CHARGE_ATTACK_CHANCE = CARD_SPREAD_ATTACK_CHANCE;
 const CHARGE_ATTACK_SPEED = 760;
@@ -1875,11 +1877,9 @@ export class LevelScene extends Phaser.Scene {
   }
 
   getNormalTreeEntries() {
-    if (Array.isArray(this.level.trees) && this.level.trees.length > 0) {
-      return this.level.trees
-        .map((entry) => this.resolveNormalTreeEntry(entry))
-        .filter(Boolean);
-    }
+    const configuredEntries = Array.isArray(this.level.trees)
+      ? this.level.trees.map((entry) => this.resolveNormalTreeEntry(entry)).filter(Boolean)
+      : [];
 
     const maxTreeX = this.level.boss.triggerX - TREE_NORMAL_BOSS_PADDING;
     const usablePlatforms = this.level.platforms
@@ -1892,20 +1892,20 @@ export class LevelScene extends Phaser.Scene {
       .sort((left, right) => left.x - right.x);
 
     if (usablePlatforms.length === 0) {
-      return [];
+      return configuredEntries;
     }
 
-    const step = usablePlatforms.length / (TREE_NORMAL_COUNT + 1);
-
-    return Array.from({ length: TREE_NORMAL_COUNT }, (_, index) => {
+    const generatedEntries = Array.from({ length: TREE_NORMAL_COUNT }, (_, index) => {
+      const platformPosition = (index + 1) / (TREE_NORMAL_COUNT + 1);
       const platformIndex = Phaser.Math.Clamp(
-        Math.round(step * (index + 1) - 0.5),
+        Math.floor(platformPosition * usablePlatforms.length),
         0,
         usablePlatforms.length - 1,
       );
       const platform = usablePlatforms[platformIndex];
+      const xRatio = 0.28 + ((index * 2) % 5) * 0.11;
       const x = Phaser.Math.Clamp(
-        platform.x + platform.width * (index % 2 === 0 ? 0.62 : 0.38),
+        platform.x + platform.width * xRatio,
         platform.x + 70,
         platform.x + platform.width - 70,
       );
@@ -1916,6 +1916,13 @@ export class LevelScene extends Phaser.Scene {
         attackChance: TREE_NORMAL_ATTACK_CHANCE,
       });
     }).filter(Boolean);
+
+    const minTreeSpacing = 420;
+    return [...configuredEntries, ...generatedEntries]
+      .sort((left, right) => left.x - right.x)
+      .filter((entry, index, entries) => (
+        entries.findIndex((other) => Math.abs(other.x - entry.x) < minTreeSpacing) === index
+      ));
   }
 
   resolveNormalTreeEntry(entry) {
@@ -4257,12 +4264,7 @@ export class LevelScene extends Phaser.Scene {
       minX,
       maxX,
     );
-    const x = this.getCakeRainSpawnXOutsideBoss(
-      laneXWithJitter,
-      minX,
-      maxX,
-      bossConfig,
-    );
+    const x = laneXWithJitter;
     const y = Math.max(
       CAKE_RAIN_SPAWN_TOP_PADDING,
       bossConfig.floorY - GAME_HEIGHT + CAKE_RAIN_SPAWN_TOP_PADDING,
@@ -4287,26 +4289,6 @@ export class LevelScene extends Phaser.Scene {
     projectile.setData('logicalTextureKey', textureKey);
 
     return projectile;
-  }
-
-  getCakeRainSpawnXOutsideBoss(x, minX, maxX, bossConfig) {
-    const clearRadius = bossConfig.cakeRainBossClearRadius ?? Math.max(
-      CAKE_RAIN_BOSS_CLEAR_RADIUS,
-      this.boss.displayWidth * 0.35,
-    );
-    const clearLeft = this.boss.x - clearRadius;
-    const clearRight = this.boss.x + clearRadius;
-
-    if (x < clearLeft || x > clearRight) {
-      return x;
-    }
-
-    const pushLeft = clearLeft - minX > maxX - clearRight;
-    const safeX = pushLeft
-      ? clearLeft - Phaser.Math.Between(16, 48)
-      : clearRight + Phaser.Math.Between(16, 48);
-
-    return Phaser.Math.Clamp(safeX, minX, maxX);
   }
 
   scheduleBossAttackProjectile(attackConfig) {
@@ -4448,7 +4430,7 @@ export class LevelScene extends Phaser.Scene {
     const bossConfig = attackConfig;
     const textureKey = attackConfig.projectileTextureKey ?? this.getBossKey('shot');
     const cardSpreadChance = bossConfig.cardSpreadAttackChance ?? CARD_SPREAD_ATTACK_CHANCE;
-    const useCardSpread = this.shouldUseBossCardSpread() &&
+    const useCardSpread = this.shouldUseBossCardSpread(bossConfig, textureKey) &&
       Math.random() <= this.getEasedBossChance(
         this.getBossSpecialAttackChance(cardSpreadChance),
       );
@@ -4497,19 +4479,18 @@ export class LevelScene extends Phaser.Scene {
     return projectile;
   }
 
-  shouldUseBossCardSpread() {
-    return this.level.id === CARD_SPREAD_BOSS_ID;
+  shouldUseBossCardSpread(bossConfig, textureKey) {
+    const hasSpreadConfig = typeof bossConfig.cardSpreadAttackChance === 'number' ||
+      this.level.id === CARD_SPREAD_BOSS_ID;
+
+    return hasSpreadConfig &&
+      textureKey !== this.getBossKey('shot-special');
   }
 
   fireBossCardSpread(direction, bossConfig, textureKey) {
-    const cardCount = Phaser.Math.Between(
-      CARD_SPREAD_MIN_PROJECTILES,
-      CARD_SPREAD_MAX_PROJECTILES,
-    );
-    const centerIndex = (cardCount - 1) / 2;
+    const velocities = this.getBossCardSpreadVelocities(bossConfig);
 
-    for (let index = 0; index < cardCount; index += 1) {
-      const velocityY = (index - centerIndex) * CARD_SPREAD_VERTICAL_SPEED_STEP;
+    velocities.forEach((velocityY) => {
       const projectile = this.createBossProjectile({
         direction,
         bossConfig,
@@ -4517,8 +4498,35 @@ export class LevelScene extends Phaser.Scene {
         velocityY,
       });
 
-      projectile.setAngle(direction < 0 ? -velocityY * 0.12 : velocityY * 0.12);
+      projectile.setAngle(
+        direction < 0
+          ? -velocityY * (bossConfig.cardSpreadAngleMultiplier ?? 0.12)
+          : velocityY * (bossConfig.cardSpreadAngleMultiplier ?? 0.12),
+      );
+    });
+  }
+
+  getBossCardSpreadVelocities(bossConfig) {
+    const pattern = bossConfig.cardSpreadPattern ?? CARD_SPREAD_PATTERN_FAN;
+
+    if (pattern === CARD_SPREAD_PATTERN_DENSE) {
+      return [-150, -75, 0, 75, 150];
     }
+
+    if (pattern === CARD_SPREAD_PATTERN_STAGGERED) {
+      return [-70, 20, 110, 205];
+    }
+
+    const cardCount = Phaser.Math.Between(
+      bossConfig.cardSpreadMinProjectiles ?? CARD_SPREAD_MIN_PROJECTILES,
+      bossConfig.cardSpreadMaxProjectiles ?? CARD_SPREAD_MAX_PROJECTILES,
+    );
+    const centerIndex = (cardCount - 1) / 2;
+    const speedStep = bossConfig.cardSpreadVerticalSpeedStep ?? CARD_SPREAD_VERTICAL_SPEED_STEP;
+
+    return Array.from({ length: cardCount }, (_, index) => (
+      (index - centerIndex) * speedStep
+    ));
   }
 
   centerProjectileBody(projectile, textureKey, bossConfig, direction = 1) {

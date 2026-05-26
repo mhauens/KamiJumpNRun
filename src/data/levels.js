@@ -34,6 +34,12 @@ const BOSS_ARENA_WIDTH = 1280
 const BOSS_ARENA_EXIT_PADDING = 140
 const BOSS_ARENA_GROUND_HEIGHT = 260
 const BOSS_HP_PLAYTIME_MULTIPLIER = 1.9
+const BOSS_AGILITY_SPEED_MULTIPLIER = 1.1
+const BOSS_AGILITY_ATTACK_COOLDOWN_MULTIPLIER = 0.9
+const BOSS_AGILITY_PROJECTILE_SPEED_MULTIPLIER = 1.06
+const BOSS_AGILITY_DODGE_CHANCE_BONUS = 0.04
+const BOSS_AGILITY_DODGE_COOLDOWN_MULTIPLIER = 0.9
+const BOSS_AGILITY_DODGE_SPEED_MULTIPLIER = 1.1
 const CHASM_PLATFORM_EDGE_OVERLAP = 20
 const CHECKPOINT_PLATFORM_INSET = 70
 const CHECKPOINT_PLATFORM_SNAP_DISTANCE = 96
@@ -263,6 +269,28 @@ function scaleBossHpForPlaytime(boss) {
     }
 }
 
+function makeBossMoreAgile(boss) {
+    const tuneNumber = (value, multiplier) => (
+        Number.isFinite(value) ? Math.round(value * multiplier) : value
+    )
+    const tuneChance = (value, bonus) => (
+        Number.isFinite(value) ? clampNumber(value + bonus, 0, 0.9) : value
+    )
+
+    return {
+        ...boss,
+        speed: tuneNumber(boss.speed, BOSS_AGILITY_SPEED_MULTIPLIER),
+        attackCooldown: tuneNumber(boss.attackCooldown, BOSS_AGILITY_ATTACK_COOLDOWN_MULTIPLIER),
+        projectileSpeed: tuneNumber(boss.projectileSpeed, BOSS_AGILITY_PROJECTILE_SPEED_MULTIPLIER),
+        dodgeChance: tuneChance(boss.dodgeChance, BOSS_AGILITY_DODGE_CHANCE_BONUS),
+        dodgeCooldown: tuneNumber(boss.dodgeCooldown, BOSS_AGILITY_DODGE_COOLDOWN_MULTIPLIER),
+        dodgeSpeed: tuneNumber(boss.dodgeSpeed, BOSS_AGILITY_DODGE_SPEED_MULTIPLIER),
+        phase2: boss.phase2
+            ? makeBossMoreAgile(boss.phase2)
+            : boss.phase2,
+    }
+}
+
 function withBossDefaults(level) {
     const lastPickupX = Math.max(
         ...level.coins.map((entry) => entry.x),
@@ -296,7 +324,7 @@ function withBossDefaults(level) {
 
         return !overlapsArena
     })
-    const boss = scaleBossHpForPlaytime({
+    const boss = makeBossMoreAgile(scaleBossHpForPlaytime({
         ...BOSS_DEFAULTS,
         ...(level.boss ?? {}),
         audio: createBossAudioConfig(level.id, level.boss?.audio),
@@ -315,7 +343,7 @@ function withBossDefaults(level) {
             y: originalGoalBottom - level.goal.height,
             label: "Boss Checkpoint",
         },
-    })
+    }))
 
     return {
         ...level,
@@ -1112,8 +1140,8 @@ const SHISHA_CITY_FOG_ZONE_START_X = 260
 const SHISHA_CITY_FOG_ZONE_COUNT = 18
 const SHISHA_CITY_FOG_ZONE_MAX_WIDTH = 900
 const SHISHA_CITY_FOG_BASE_DENSITY = 0.32
-const SHISHA_CITY_FOG_BASE_SPEED_MULTIPLIER = 0.82
-const SHISHA_CITY_FOG_BASE_AIR_CONTROL_MULTIPLIER = 0.74
+const SHISHA_CITY_FOG_BASE_SPEED_MULTIPLIER = 0.76
+const SHISHA_CITY_FOG_BASE_AIR_CONTROL_MULTIPLIER = 0.68
 const SHISHA_CITY_FOG_ZONE_PATTERNS = [
     { y: 150, height: 540, density: 0.3, widthRatio: 0.5, xOffsetRatio: 0.06 },
     { y: 100, height: 635, density: 0.38, widthRatio: 0.72, xOffsetRatio: 0.18 },
@@ -1195,13 +1223,13 @@ function createShishaCityFogZones(level) {
             density: pattern.density,
             speedMultiplier: clampNumber(
                 SHISHA_CITY_FOG_BASE_SPEED_MULTIPLIER - densityOffset * 0.35,
-                0.78,
-                0.86,
+                0.68,
+                0.82,
             ),
             airControlMultiplier: clampNumber(
                 SHISHA_CITY_FOG_BASE_AIR_CONTROL_MULTIPLIER - densityOffset * 0.45,
-                0.68,
-                0.8,
+                0.6,
+                0.74,
             ),
         }
     })
@@ -1652,6 +1680,17 @@ export const LEVELS = [
             projectileSpeed: 325,
             dodgeChance: 0.49,
             critChance: 0.24,
+            cardSpreadAttackChance: 0.42,
+            cardSpreadPattern: "dense",
+            cardSpreadAngleMultiplier: 0.09,
+            cakeRainAttackChance: 0.3,
+            cakeRainCooldown: 1550,
+            cakeRainProjectileCount: 9,
+            cakeRainFallSpeed: 410,
+            cakeRainShotScale: 0.48,
+            cakeRainShotBodyWidth: 42,
+            cakeRainShotBodyHeight: 30,
+            cakeRainToast: "Rauchregen!",
             scaleMultiplier: 1.38,
             shotOffsetX: 68,
             shotOffsetY: -82,
@@ -1763,6 +1802,17 @@ export const LEVELS = [
             projectileSpeed: 340,
             dodgeChance: 0.58,
             critChance: 0.25,
+            cardSpreadAttackChance: 0.44,
+            cardSpreadPattern: "staggered",
+            cardSpreadAngleMultiplier: 0.1,
+            cakeRainAttackChance: 0.32,
+            cakeRainCooldown: 1450,
+            cakeRainProjectileCount: 7,
+            cakeRainFallSpeed: 455,
+            cakeRainShotScale: 0.46,
+            cakeRainShotBodyWidth: 42,
+            cakeRainShotBodyHeight: 26,
+            cakeRainToast: "Hufeisenregen!",
             chargeAttackChance: 0.36,
             specialAttackReductionPerBall: 0.01,
             shotScale: 0.5,
